@@ -31,6 +31,7 @@ https://github.com/Near7707/Crumble
 확장 설정 칸의 **Crumble**에서:
 
 - **언어**: 자동(실리태번 언어) / 한국어 / English — AI가 쓰는 글도 이 언어로 나와요.
+- **AI 연결**: 지금 연결 그대로(기본) / 실리태번 연결 프로필 중 하나. 게임 글만 그 프로필로 보내고, 채팅 연결은 바꾸지 않아요. 고른 프로필을 못 찾으면 지금 연결 그대로 써요.
 - **원본 카드 참고**: 직접 영업 전부(기본) / 중요 장면만 / 안 함. 자동 일지·마감 일기·장면 말풍선은 언제나 직원 설명서만 써요.
 - **영업 시간 길이**, **AI 응답 길이**, **바로 다음 날 영업하기**, **확대 위치 기억하기**
 
@@ -42,7 +43,7 @@ https://github.com/Near7707/Crumble
 - 가게 장면 속 움직임·아이콘은 전부 규칙으로 정해서 AI를 부르지 않아요.
 - AI가 응답하지 않으면 기본 대사로 계속 진행돼요.
 
-지금 연결된 API를 그대로 써요.
+기본은 지금 연결된 API를 그대로 쓰고, 설정의 **AI 연결**에서 게임용 연결 프로필을 따로 고를 수 있어요 (싸고 빠른 모델은 게임에, 채팅은 원래 모델로).
 
 ## 저장
 
@@ -94,6 +95,7 @@ Then open **Crumble** from the extensions (wand) menu.
 Under **Crumble** in the extension settings:
 
 - **Language**: Auto (SillyTavern language) / 한국어 / English — AI-written text follows this too.
+- **AI connection**: Current connection (default) / one of your SillyTavern connection profiles. Only game text goes through that profile; your chat connection is never switched. If the profile is missing, the current connection is used.
 - **Use original card text**: all of direct business (default) / important scenes only / off. Away logs, diaries and speech bubbles always use the staff manual only.
 - **Business length**, **AI response length**, **skip to next day**, **remember zoom**
 
@@ -105,7 +107,7 @@ Under **Crumble** in the extension settings:
 - Movement and icons in the shop scene are rule-based — no AI calls.
 - If the AI doesn't answer, the game continues with default lines.
 
-Uses whatever API you're currently connected to.
+By default it uses whatever API you're currently connected to. Pick a separate connection profile under **AI connection** to run the game on a cheaper/faster model while chatting with your usual one.
 
 ## Saving
 

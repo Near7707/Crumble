@@ -7,11 +7,35 @@ import { AI_LANG, isKo } from './i18n.js';
 
 const bossName = () => ctx().name1 || (isKo() ? '사장님' : 'Boss');
 
+/** 실리태번 연결 프로필 목록 (읽기만) */
+export function getProfiles() {
+    const list = ctx().extensionSettings?.connectionManager?.profiles;
+    return Array.isArray(list) ? list : [];
+}
+
+/** 저장된 프로필이 지금 쓸 수 있으면 그 프로필, 아니면 null (= 지금 연결 그대로) */
+export function activeProfile() {
+    const id = S().profileId;
+    if (!id) return null;
+    return getProfiles().find(p => p.id === id) || null;
+}
+
 async function raw(prompt, system) {
     const c = ctx();
+    const len = S().responseLength || 1600;
+    // 게임용 연결 프로필: 채팅 쪽 연결은 바꾸지 않고 이 요청만 그 프로필로 보낸다.
+    // 프로필을 못 찾으면 아래 "지금 연결 그대로"로 내려간다.
+    const prof = activeProfile();
+    const svc = c.ConnectionManagerRequestService;
+    if (prof && svc?.sendRequest) {
+        const messages = [{ role: 'system', content: system }, { role: 'user', content: prompt }];
+        const res = await svc.sendRequest(prof.id, messages, len, {
+            stream: false, extractData: true, includePreset: true, includeInstruct: true,
+        });
+        return typeof res === 'string' ? res : (res?.content ?? '');
+    }
     const fn = c.generateRaw;
     if (typeof fn !== 'function') throw new Error('generateRaw not available');
-    const len = S().responseLength || 1600;
     // 예전 실리태번: generateRaw(prompt, api, instructOverride, quietToLoud, systemPrompt, responseLength)
     // 요즘 실리태번: generateRaw({ prompt, systemPrompt, responseLength })
     if (fn.length >= 2) return await fn(prompt, null, false, false, system, len);

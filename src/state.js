@@ -45,6 +45,7 @@ const DEFAULT_SETTINGS = {
     skipWait: false,
     rememberZoom: false,
     responseLength: 1600,
+    profileId: '', // '' = 지금 연결 그대로
     staffBook: {},
     game: null,
     pastShops: [],
