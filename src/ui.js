@@ -104,7 +104,7 @@ document.addEventListener('visibilitychange', () => {
     markSeen();
     if (businessActive()) { addBacklog(away); return; }
     if (BIZ.includes(G()?.phase)) return;
-    const days = catchUp();
+    const days = catchUp(away);
     const short = !days && G() ? shortAway(G(), away) : null;
     if (days || short) { render(); runAway(days || [short]); }
 });
@@ -119,7 +119,7 @@ export async function openWindow() {
     const away = minutesAway();
     markSeen();
     if (businessActive()) { addBacklog(away); return; } // 멈춰 둔 영업 화면 그대로 (오래 비웠으면 밀린 일)
-    const days = catchUp();
+    const days = catchUp(away);
     // 날이 안 바뀌었어도 창을 오래 닫아 뒀으면 작은 일 몇 개 (문 열기 전·마감 후만)
     const short = !days ? shortAway(G(), away) : null;
     render();
@@ -290,6 +290,8 @@ function shopTab() {
         h += `<button class="cr-link" type="button" data-act="toJournal">${L('전체 기록 보기 ›', 'See full log ›')}</button></section>`;
         g.away.seen = true;
     }
+    // 오늘 영업 끝: 그날 운영 결과 + [다음 날 시작]
+    if (g.phase === 'done') h += dayResultHtml(g);
     // 수치 2×2
     const last = g.journal[0];
     h += `<section class="cr-grid2">
@@ -305,9 +307,31 @@ function shopTab() {
     // 버튼
     let main;
     if (g.phase === 'ready') main = `<button class="cr-pbtn" type="button" data-act="startDay" ${w.filter(s => !s.absent).length ? '' : 'disabled'}>${L('오늘 영업 시작 ›', 'Open the shop ›')}</button>`;
-    else main = `<button class="cr-pbtn" type="button" disabled>${L('오늘 영업 끝 · 내일 또 만나요', 'Done for today · see you tomorrow')}</button>${S().skipWait ? `<button class="cr-btn" type="button" data-act="nextDay">${L('바로 다음 날로', 'Skip to next day')}</button>` : ''}`;
+    else main = `<button class="cr-pbtn" type="button" data-act="nextDay">${L('다음 날 시작 ›', 'Start the next day ›')}</button>`;
     h += `<div class="cr-actions"><button class="cr-btn" type="button" data-act="quickBuy">${L('재료 사기', 'Buy stock')}</button>${main}</div><div class="cr-cookies" aria-hidden="true"></div>`;
     return h;
+}
+
+/** 영업 끝난 날: 그날 결과 카드 (돈·손님·평판 + 가게 소식 중 굵직한 것) */
+function dayResultHtml(g) {
+    const t = g.today || {};
+    const sum = t.closed?.summary || t.biz?.summary || {};
+    const j = g.journal.find(x => x.day === g.day && x.mode === 'direct');
+    const net = j?.delta?.money ?? sum.net ?? 0;
+    const rep0 = t.biz?.rep0 ?? g.rep, rep1 = rep0 + (j?.delta?.rep ?? 0);
+    const repD = Math.round(rep1 - rep0);
+    // 사건 결과·사고 먼저, 같은 종류는 하나만, 최대 3줄
+    const rank = n => (String(n.key).startsWith('res') ? 0 : n.k === 'bad' ? 1 : n.k === 'good' ? 2 : 3);
+    const seen = new Set();
+    const picks = (t.biz?.news || []).filter(n => !String(n.key).startsWith('ev') && n.k !== 'sleep')
+        .map((n, i) => ({ ...n, i })).sort((a, b) => rank(a) - rank(b) || b.i - a.i)
+        .filter(n => { const k = String(n.key).replace(/[^a-z]/gi, '').slice(0, 5); if (seen.has(k)) return false; seen.add(k); return true; })
+        .slice(0, 3).sort((a, b) => a.i - b.i);
+    return `<section class="cr-card cr-dayRes"><div class="cr-ttl">🌙 ${F(L('{n}일째 영업 결과', 'Day {n} results'), { n: g.day })}<small>${L('오늘 영업 끝', 'Closed for today')}</small></div>
+<b class="cr-big ${net < 0 ? 'neg' : 'pos'}">${signedMoney(net)}</b>
+<div class="cr-chips"><span class="cr-chip">${L('손님', 'Guests')} <b>${sum.served ?? 0}</b></span><span class="cr-chip ${repD >= 0 ? 'good' : 'warn'}">${L('평판', 'Rep')} <b>${Math.round(rep0)} → ${Math.round(rep1)}</b> ${repD >= 0 ? '▲' : '▼'}${Math.abs(repD)}</span>${(t.closed?.discarded || sum.spoiled) ? `<span class="cr-chip warn">${L('버린 재료', 'Tossed')} <b>${(t.closed?.discarded || 0) + (sum.spoiled || 0)}</b></span>` : ''}</div>
+${picks.length ? picks.map(n => `<div class="cr-nrow"><time>${esc(n.t)}</time><span class="cr-nd ${n.k}"></span><span class="cr-nt">${esc(n.text)}</span>${n.chip ? `<span class="cr-chip ${n.good ? 'up' : 'dn'}">${esc(n.chip)}</span>` : ''}</div>`).join('') : `<p class="cr-muted">${L('별일 없이 조용한 하루였어요.', 'A quiet day with nothing much going on.')}</p>`}
+<p class="cr-muted">${L('준비되면 아래 [다음 날 시작]을 눌러요. 창을 닫아 두면 시간이 지나는 만큼 직원들끼리 영업해요.', 'Press [Start the next day] when ready. With the window closed, the staff keep the shop going as time passes.')}</p></section>`;
 }
 
 function mountShopScene() {

@@ -1,5 +1,5 @@
 // 게임 규칙 — 수치 계산은 전부 여기서 (AI는 글만 쓴다)
-import { clamp, pick, chance, randi, shuffle, uid, dayKey, daysBetween } from './util.js';
+import { clamp, pick, chance, randi, shuffle, uid, dayKey } from './util.js';
 import {
     G, S, save, book, staffById, rel, addRel, bossRel, remember, addJournal, addExp,
     WAGE, ING_PRICE, MAX_INBOX, menuInfo, MENU_POOL,
@@ -54,21 +54,25 @@ export const roleLabel = r => L(...({ bake: ['제빵', 'Baking'], serve: ['계�
 
 // ---------- 하루 시작 ----------
 /** 다시 켰을 때: 지난 날들을 자동 운영으로 계산할 목록을 만든다 (최대 3일) */
-export function catchUp() {
+/**
+ * 창을 닫아 둔 시간(분) → 직원들끼리 영업한 날 (0.2.1: 실제 날짜·새벽 6시 리셋 대신 게임 안 시간)
+ * 설정 "직원들끼리 하루 영업하는 시간"(기본 8시간)마다 하루, 최대 3일. 돌아오면 다음 날 아침.
+ */
+export function catchUp(minutes = 0) {
     const g = G(); if (!g) return null;
-    const today = dayKey();
-    const diff = daysBetween(g.dayKey, today);
-    if (diff <= 0) return null;
-    if (g.phase === 'close') finishClose(g);
-    // 지난 날을 직접 영업했으면 그날은 빼고, 아니면 그날도 자동 운영
-    let missed = g.phase === 'done' ? diff - 1 : diff;
     if (g.phase === 'ending') return null;
-    missed = clamp(missed, 0, 3);
+    const per = Math.max(1, +S().autoDayHours || 8) * 60;
+    const n = clamp(Math.floor(minutes / per), 0, 3);
+    if (!n) return null;
+    if (g.phase === 'close') finishClose(g);
+    if (g.phase === 'ending') return null;
+    // 아직 영업 안 한 날(문 열기 전)이면 그날부터 직원들끼리 영업
+    if (g.phase !== 'done') g.day -= 1;
     const days = [];
-    for (let i = 0; i < missed; i++) days.push(autoDay(g));
-    // 오늘
+    for (let i = 0; i < n; i++) days.push(autoDay(g));
+    // 돌아온 날 아침
     g.day += 1;
-    g.dayKey = today;
+    g.dayKey = dayKey();
     startDay(g);
     save();
     return days.length ? days : null;
@@ -98,11 +102,12 @@ export function finishClose(g) {
     save();
 }
 
-/** 바로 다음 날로 (설정 "기다리지 않고 바로 다음 날") */
+/** 영업 결과 화면에서 [다음 날 시작] */
 export function nextDayNow() {
     const g = G();
     if (g.phase !== 'done') return;
     g.day += 1;
+    g.dayKey = dayKey();
     startDay(g);
     save();
 }

@@ -627,7 +627,7 @@ ${B.backlog.map(x => `<div class="cr-whoRow">${faceChip(x.staffIds[0], 28)}<span
         const tt = clamp((B?.elapsed || 0) / D, 0, 1);
         const mins = 10 * 60 + Math.round(tt * 600);
         const hh = Math.floor(mins / 60), mm = String(mins % 60 - mins % 10).padStart(2, '0'), h12 = hh > 12 ? hh - 12 : hh;
-        if (!long) return `${h12}:${mm}`;
+        if (!long) return `${hh}:${mm}`; // 소식 줄은 24시간 (오전·오후 헷갈리지 않게)
         return L(`${hh < 12 ? '오전' : hh < 18 ? '오후' : '저녁'} ${h12}:${mm}`, `${h12}:${mm} ${hh < 12 ? 'AM' : 'PM'}`);
     }
     let tod = '';

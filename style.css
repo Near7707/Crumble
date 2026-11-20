@@ -447,3 +447,8 @@ button.cr-ent { cursor: pointer; }
 @media (prefers-reduced-motion: reduce) {
     .cr-float, .cr-nrow.fresh { animation: none !important; }
 }
+/* 0.2.1 오늘 영업 끝: 그날 결과 */
+.cr-dayRes { border: 2px solid var(--cr-line2); }
+.cr-dayRes .cr-big { display: block; margin: 2px 0 6px; }
+.cr-dayRes .cr-chips { margin-bottom: 4px; }
+.cr-dayRes p.cr-muted { margin: 6px 0 0; }
