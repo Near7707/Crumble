@@ -5,13 +5,13 @@ import { G, S, save, book, staffById, colorOf, bossRel, menuInfo, ING_PRICE, ski
 import {
     prepToday, expectedGuests, ingCost, pickEvents, fallbackEventText, resolveEvent, deltaText, newBiz, sellOne,
     closeDay, worries, finishClose, applyNotices, workingStaff, hasTag, friendSaves, EVENT_KINDS, guestMult,
-    roleLabel, weatherLabel,
+    roleLabel, weatherLabel, staffPick, delegateIndex, canDelegate,
 } from './rules.js';
 import { createScene } from './scene.js';
 import { faceChip } from './looks.js';
 import { line, tapLine } from './lines.js';
 import { morningPrep, closingDiary } from './ai.js';
-import { render, addScene, openSheet, closeSheet, toast, logoHtml, closeBtn, gearBtn, heartRow, bar, nameTag, closeWindow, inner } from './ui.js';
+import { render, addScene, openSheet, closeSheet, toast, logoHtml, closeBtn, gearBtn, bizTabs, heartRow, bar, nameTag, closeWindow, inner } from './ui.js';
 
 let B = null; // 지금 돌아가는 영업
 const inflight = new Set(); // 지금 기다리는 AI 호출 (저장하지 않음 → 새로고침하면 다시 부름)
@@ -20,6 +20,7 @@ export const businessActive = () => !!(B && B.running && !B.sc.dead);
 export function pauseBusiness(on, cover = on) {
     if (!B) return;
     B.sc.paused = on;
+    // cover = "멈춤" 띠를 보여줄지 (사건 창·설정·다른 탭 때문에 멈춘 건 띠 없이)
     B.host?.closest('.cr-inner')?.classList.toggle('cr-paused', on && cover);
     const pb = document.querySelector('#crumble-root .cr-pause');
     if (pb) { pb.innerHTML = on ? PLAY : PAUSE; pb.setAttribute('aria-label', on ? L('다시 시작', 'Resume') : L('일시정지', 'Pause')); }
@@ -53,8 +54,8 @@ function morningScreen(box) {
     if (!t.aiDone && !t.aiError && !inflight.has('m' + g.id + g.day)) startMorningAI(g);
 
     box.innerHTML = `<header class="cr-top biz"><div class="cr-row">${steps('morning')}<span class="cr-money sm" id="cr-mMoney"></span>${gearBtn()}${closeBtn()}</div>
-<div class="cr-time"><b>${L('오전 9:40', '9:40 AM')}</b>${bar(4, '#FBE29A')}<span class="cr-muted">${L('10시 문 열기', 'Opens at 10')}</span></div></header><div class="cr-drip"></div>
-<main class="cr-main">
+<div class="cr-time"><b>${L('오전 9:40', '9:40 AM')}</b>${bar(4, '#FBE29A')}<span class="cr-muted">${L('10시 문 열기', 'Opens at 10')}</span></div></header><div class="cr-drip"></div>${bizTabs()}
+<main class="cr-main" data-biz>
 ${(t.notices || []).map(n => `<div class="cr-alertCard">🌙 ${esc(n.text)}</div>`).join('')}
 <div class="cr-sceneHost" id="cr-mScene"></div>
 <section class="cr-card"><div class="cr-talk" id="cr-mTalk"></div></section>
@@ -194,14 +195,15 @@ function openScreen(box) {
     const biz = t.biz = newBiz(g);
     const minutes = clamp(S().businessMinutes || 4, 2, 10);
     const D = minutes * 60000;
-    box.innerHTML = `<header class="cr-top biz"><div class="cr-row">${steps('open')}${gearBtn(true)}<button class="cr-pause" type="button" aria-label="${L('일시정지', 'Pause')}">${PAUSE}</button></div>
-<div class="cr-time"><b id="cr-clock"></b><span class="cr-bar time"><i id="cr-tfill"></i></span><span class="cr-muted">${L('저녁 8시 마감', 'Closes 8 PM')}</span></div></header><div class="cr-drip"></div>
-<main class="cr-main">
+    box.innerHTML = `<header class="cr-top biz"><div class="cr-row">${steps('open')}${gearBtn(true)}<button class="cr-pause" type="button" aria-label="${L('일시정지', 'Pause')}">${PAUSE}</button>${closeBtn()}</div>
+<div class="cr-time"><b id="cr-clock"></b><span class="cr-bar time"><i id="cr-tfill"></i></span><span class="cr-muted">${L('저녁 8시 마감', 'Closes 8 PM')}</span></div></header><div class="cr-drip"></div>${bizTabs()}
+<main class="cr-main" data-biz>
+<div class="cr-pauseBand" role="status"><span>⏸ ${L('가게가 멈춰 있어요', 'The shop is paused')}</span><button type="button" class="cr-pbtn sm" data-b="resume">▶ ${L('다시 시작', 'Resume')}</button></div>
 <div class="cr-sceneHost" id="cr-oScene"></div>
 <div class="cr-chips" id="cr-chips"></div>
 <section class="cr-card" id="cr-who"></section>
 <p class="cr-muted cr-center">${L('직원을 눌러 보세요 · [찾기]를 누르면 그 직원 쪽으로 확대돼요', 'Tap staff · [Find] zooms to them')}</p>
-</main><div class="cr-pauseCover"><button type="button" class="cr-pbtn" data-b="resume">▶ ${L('다시 시작', 'Resume')}</button></div>`;
+</main>`;
     const host = box.querySelector('#cr-oScene');
     const lay = (() => { const s = createScene(host, { size: g.size, height: 360, zoom: .85, focus: [6, 3], zoomKey: 'open' }); addScene(s); return s; })();
     const sc = lay;
@@ -447,17 +449,27 @@ function openScreen(box) {
 <p class="cr-situ">${esc(tx.situation)}</p>
 ${tx.guest ? `<div class="cr-say2"><span class="cr-face guest">🙂</span><p>${esc(tx.guest)}</p></div>` : ''}
 ${ev.staffIds.map((id, i) => (i === 0 && tx.staff) ? `<div class="cr-say2">${faceChip(id, 30)}<p>${esc(tx.staff)}</p></div>` : '').join('')}
-${tx.choices.map((c, i) => `<button type="button" class="cr-opt" data-b="opt" data-i="${i}">${esc(c.label)}</button>`).join('')}`, true);
+${tx.choices.map((c, i) => (i === delegateIndex(ev) && canDelegate(ev)) ? '' : `<button type="button" class="cr-opt" data-b="opt" data-i="${i}">${esc(c.label)}</button>`).join('')}
+${canDelegate(ev) ? `<button type="button" class="cr-opt cr-optDel" data-b="delegate">🤝 ${F(L('{n}에게 맡기기', 'Leave it to {n}'), { n: book(sid)?.name })}<small>${L('성격대로 알아서 해요', 'They\'ll do it their own way')}</small></button>` : ''}
+<div class="cr-actions"><button type="button" class="cr-btn" data-b="later">${L('나중에 보기', 'Later')}</button></div>
+<p class="cr-muted cr-center">${L('나중에 봐도 "!"는 남아 있어요. 너무 오래 두면 직원이 알아서 해요.', 'The "!" stays. Leave it too long and they\'ll handle it themselves.')}</p>`, true);
     };
-    const finishEvent = (ci, auto) => {
+    // 사건 창 닫기 (사건은 그대로 남음, 가게는 다시 움직임)
+    const laterEvent = () => { if (!B?.active) return; closeSheet(); pauseBusiness(false); };
+    // mode: false = 사장님이 고름 / 'delegate' = 맡김 / 'auto' = 오래 안 봐서 직원이 알아서
+    const finishEvent = (ci, mode) => {
         const ev = B.active; if (!ev) return;
-        const res = resolveEvent(g, ev, ci, biz);
+        const byStaff = mode === 'delegate' || mode === 'auto';
+        if (byStaff) ci = staffPick(g, ev);
+        const res = resolveEvent(g, ev, ci, biz, byStaff);
         closeSheet(); pauseBusiness(false);
         for (const id of ev.staffIds) { const e = B.ents[id]; if (e) sc.alert(e, false); }
         const e = B.ents[ev.staffIds[0]];
         if (e) { sc.emo(e, res.interfere ? 'note' : res.ok ? 'heart' : 'sweat'); if (res.line) sc.say(e, res.line, 3200); }
         const dt = deltaText(res.delta);
-        toast((auto ? L('사장님이 안 봐서 알아서 했어요 · ', 'You didn\'t look, so they handled it · ') : '') + (res.interfere ? L('성격이 끼어들었어요 · ', 'Personality got in the way · ') : '') + (dt || L('별일 없이 지나갔어요', 'Nothing much changed')), 3200);
+        const picked = (ev.text || fallbackEventText(ev)).choices[ci]?.label || '';
+        const head = mode === 'auto' ? L('사장님이 안 봐서 알아서 했어요', 'You didn\'t look, so they handled it') : mode === 'delegate' ? F(L('{n}에게 맡겼어요', 'Left it to {n}'), { n: book(ev.staffIds[0])?.name }) : '';
+        toast((head ? `${head}${picked && delegateIndex(ev) !== ci ? ` (${picked})` : ''} · ` : '') + (res.interfere ? L('성격이 끼어들었어요 · ', 'Personality got in the way · ') : '') + (dt || L('별일 없이 지나갔어요', 'Nothing much changed')), 3200);
         B.active = null; B.wait = 0;
         if (ev.kind === 'inspection' && ci === 1) { stains.length = 0; sc.setStains(stains); }
         chips(); save();
@@ -493,7 +505,7 @@ ${tx.choices.map((c, i) => `<button type="button" class="cr-opt" data-b="opt" da
                     }
                 } else {
                     B.wait += 250;
-                    if (B.wait > Math.max(20000, D * .1)) finishEvent(2, true);
+                    if (B.wait > Math.max(20000, D * .1)) finishEvent(0, 'auto');
                 }
                 if (tt >= 1 && !B.active && (B.guests.length === 0 || tt >= 1.12)) { await finish(); return; }
             }
@@ -520,14 +532,16 @@ ${tx.choices.map((c, i) => `<button type="button" class="cr-opt" data-b="opt" da
             if (b.dataset.b === 'resume') pauseBusiness(false);
             return;
         }
-        if (e.target.closest('.cr-pause')) {
-            if (sc.paused && !B?.active) { pauseBusiness(false); return; }
-            pauseBusiness(true);
-            closeWindow(); // 가게가 멈추고 채팅으로
-        }
+        // ⏸ = 그 자리에서 멈추기/다시 시작 (창 닫기는 ✕)
+        if (e.target.closest('.cr-pause')) pauseBusiness(!sc.paused);
     });
     const sheet = document.querySelector('#crumble-root .cr-sheet');
-    B.sheetHandler = e => { const b = e.target.closest('[data-b="opt"]'); if (b && B?.active) finishEvent(+b.dataset.i, false); };
+    B.sheetHandler = e => {
+        const b = e.target.closest('[data-b]'); if (!b || !B?.active) return;
+        if (b.dataset.b === 'opt') finishEvent(+b.dataset.i, false);
+        else if (b.dataset.b === 'delegate') finishEvent(0, 'delegate');
+        else if (b.dataset.b === 'later') laterEvent();
+    };
     sheet.onclick = B.sheetHandler;
 
     sc.setEnv({ tod: 'am', weather: g.weather });
@@ -547,8 +561,8 @@ function closeScreen(box) {
     const repD = Math.round(g.rep - biz.rep0), cleanD = Math.round(g.clean - biz.clean0);
     const net = g.money - biz.money0 - (t.spentIng || 0);
     box.innerHTML = `<header class="cr-top biz"><div class="cr-row">${steps('close')}<span class="cr-money sm${g.money < 0 ? ' neg' : ''}">💰 ${money(g.money)}</span>${gearBtn()}${closeBtn()}</div>
-<div class="cr-time"><b>${L('저녁 8:00', '8:00 PM')}</b>${bar(100, '#FBE29A')}<span class="cr-muted">${L('문 닫음', 'Closed')}</span></div></header><div class="cr-drip"></div>
-<main class="cr-main">
+<div class="cr-time"><b>${L('저녁 8:00', '8:00 PM')}</b>${bar(100, '#FBE29A')}<span class="cr-muted">${L('문 닫음', 'Closed')}</span></div></header><div class="cr-drip"></div>${bizTabs()}
+<main class="cr-main" data-biz>
 <div class="cr-sceneHost" id="cr-cScene"></div>
 <section class="cr-card"><div class="cr-ttl">💰 ${L('오늘 번 돈', 'Today\'s earnings')}<small>${F(L('{n}일째', 'Day {n}'), { n: g.day })}</small></div>
 <b class="cr-big ${net < 0 ? 'neg' : 'pos'}">${signedMoney(net)}</b>

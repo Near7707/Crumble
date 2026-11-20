@@ -206,8 +206,8 @@ details.cr-card summary { cursor: pointer; font-weight: 700; font-size: 13px; }
 .cr-staffc:first-of-type { border-top: none; }
 .cr-diary { margin: 5px 0 0; font-size: 12.5px; background: #FFF4E6; border-radius: 10px; padding: 5px 9px; min-height: 26px; }
 .cr-ai { min-height: 4px; }
-.cr-pauseCover { display: none; position: absolute; inset: 0; z-index: 60; background: rgba(90, 56, 32, .28); align-items: center; justify-content: center; }
-.cr-inner.cr-paused .cr-pauseCover { display: flex; }
+
+
 .cr-inner.cr-paused .cr-ent, .cr-inner.cr-paused .cr-ent * { animation-play-state: paused !important; }
 .cr-inner { position: relative; }
 
@@ -367,3 +367,16 @@ button.cr-ent { cursor: pointer; }
 .cr-check { display: flex; align-items: center; gap: 8px; font-size: 13.5px; min-height: 36px; margin-top: 4px; cursor: pointer; }
 .cr-check input { width: 20px; height: 20px; accent-color: var(--cr-coral); flex: none; }
 .crumble-settings .crumble-sgroup { font-weight: 700; margin-top: 12px; padding-bottom: 2px; border-bottom: 1px solid var(--SmartThemeBorderColor, rgba(128,128,128,.4)); }
+
+/* 영업 중 탭 · 멈춤 띠 · 사건 창 (0.1.8) */
+.cr-hide { display: none !important; }
+.cr-bizTabs { padding-top: 2px; }
+.cr-inner.cr-onOther .cr-pause { visibility: hidden; }
+.cr-pauseBand { display: none; align-items: center; gap: 8px; padding: 6px 8px 6px 12px; border-radius: 14px; background: #FFF1D6; border: 1.5px solid #EBCB8B; font-size: 13px; font-weight: 700; }
+.cr-pauseBand .cr-pbtn { margin-left: auto; }
+.cr-inner.cr-paused .cr-pauseBand { display: flex; }
+.cr-optDel { display: flex; flex-direction: column; gap: 1px; border-style: dashed; background: #FFF8EC; }
+.cr-optDel small { font-size: 11.5px; color: var(--cr-sub); font-weight: 400; }
+.cr-alertCard.soft { background: #FFF1D6; color: var(--cr-text); border: 1.5px solid #EBCB8B; font-size: 12.5px; }
+.cr-btn.sm { min-height: 34px; font-size: 12.5px; padding: 0 10px; }
+.cr-voice { background: #FFF6EC; border-radius: 12px; padding: 6px 8px; }

@@ -65,6 +65,8 @@ function system() {
         'Rules:',
         '- Every staff member acts true to their own manual: personality, speech style, values, flaws, attitude to the boss.',
         '- Do NOT make everyone nice and hard-working. Show flaws, slacking, sulking, talking back, flattery, small mischief when it fits.',
+        '- VOICE: each staff member must sound like THEIR OWN character — same speech level, bluntness or coldness, slang, catchphrases, sentence endings and way of addressing the boss as in their voice samples / manual. Never smooth anyone into a generic friendly, polite shop clerk. A rude or cold character stays rude or cold even at work.',
+        '- If "Voice samples" are given, they are the HIGHEST authority on how that person talks. If the samples are in another language, do not translate them word for word: carry over the feel (tone, attitude, quirks, how they address people) and write it naturally in the output language.',
         '- Skill and personality are separate: a skilled worker can still cause trouble because of their personality.',
         '- Keep it light and slice-of-life. No graphic content. Never invent staff who are not listed.',
         '- Reply with ONE JSON object only. No markdown, no commentary.',
@@ -89,11 +91,25 @@ export function cardText(avatar, max = 1800) {
     return out;
 }
 
+const LEVEL = {
+    casual: 'Korean speech level: ALWAYS banmal (반말, casual), never 존댓말 — even to the boss and customers unless the voice samples clearly show otherwise.',
+    polite: 'Korean speech level: ALWAYS 존댓말 (polite), never 반말.',
+};
+/** 사장님이 적은 말투 샘플 + 한국어 말 높이 (모든 호출에 맨 앞으로) */
+function voiceText(b) {
+    const out = [];
+    const v = String(b.voice || '').trim();
+    if (v) out.push(`Voice samples (real lines from the user's roleplay — copy this voice):\n${v.split('\n').map(x => x.trim()).filter(Boolean).slice(0, 12).map(x => `  "${x}"`).join('\n')}`);
+    if (isKo() && LEVEL[b.speechLevel]) out.push(LEVEL[b.speechLevel]);
+    return out.join('\n');
+}
+
 function manualText(id) {
     const b = book(id); if (!b) return '';
     const m = b.manual || {};
     return [
         `Name: ${b.name}`,
+        voiceText(b),
         b.job && `Job/background: ${b.job}`,
         m.personality && `Personality: ${m.personality}`,
         m.speech && `Speech style: ${m.speech}`,
@@ -143,7 +159,7 @@ Keep the character exactly as the card describes. Include real flaws.
 === CHARACTER CARD: ${ch.name} ===
 ${card}
 === END ===
-
+${(() => { const b = S().staffBook[avatar]; const v = b ? voiceText(b) : ''; return v ? `\n=== HOW THE USER SAYS THIS CHARACTER REALLY TALKS (follow this for speech, examples and lines) ===\n${v}\n` : ''; })()}
 Return JSON:
 {
  "job": "their job/background in a few words (from the card)",
@@ -179,6 +195,40 @@ Return JSON:
         bake: Math.round(num(j.bake, 2, 8, 4)),
         serve: Math.round(num(j.serve, 2, 8, 4)),
     };
+}
+
+// ---------- 1-2. 기본 말풍선만 다시 만들기 (설명서 + 말투 샘플로) ----------
+export async function remakeLines(id) {
+    const b = book(id); if (!b) return null;
+    const prompt = `Rewrite this shop worker's short in-shop speech bubbles so they sound exactly like them.
+
+${manualText(id)}
+
+Return JSON: {"lines": { very short in-shop speech bubbles (max ~25 characters each) in THIS person's own voice,
+   one string per key: ${FALLBACK_KEYS.map(k => `"${k}"`).join(', ')}
+   (${FALLBACK_HINT}) }}`;
+    const j = await askJson(prompt, system());
+    const lines = cleanLines(j?.lines);
+    if (!Object.keys(lines).length) return null;
+    return { lines, linesLang: AI_LANG() };
+}
+
+/** 카드의 예시 대화에서 그 캐릭터 대사만 뽑기 (읽기만, AI 안 부름) */
+export function cardExampleLines(avatar, max = 10) {
+    const ch = (ctx().characters || []).find(c => c.avatar === avatar);
+    if (!ch) return [];
+    const ex = String(ch.data?.mes_example ?? ch.mes_example ?? '');
+    const name = String(ch.name || '').trim();
+    const esc = x => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const head = new RegExp(`^\\s*(?:\\{\\{char\\}\\}${name ? '|' + esc(name) : ''})\\s*:\\s*`, 'i');
+    const out = [];
+    for (const raw of ex.split(/\r?\n/)) {
+        if (!head.test(raw)) continue;
+        const t = fill(raw.replace(head, ''), name).trim();
+        if (t) out.push(t.length > 200 ? t.slice(0, 199) + '…' : t);
+        if (out.length >= max) break;
+    }
+    return out;
 }
 
 // ---------- 2. 아침: 장면 대사 + 오늘 사건 글 (한 번에) ----------

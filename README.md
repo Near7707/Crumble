@@ -10,6 +10,8 @@
 
 - **가게 안을 구경해요.** 비스듬히 내려다보는 작은 가게에서 직원들이 오븐에서 굽고, 계산대에서 주문을 받고, 바닥을 닦고, 가끔 몰래 케이크를 먹어요. 끌어서 둘러보고 두 손가락으로 확대할 수 있어요.
 - **하루 5~10분.** 🌅 아침 준비(재료·가격) → ☕ 영업(사건이 "!"로 떠요) → 🌙 마감 정산(번 돈, 직원 일기).
+- **사건은 직접 고르거나 맡기거나.** "!"를 누르면 선택지가 나와요. 직원에게 맡기면 성격대로 처리하고, [나중에 보기]로 미뤄 둘 수도 있어요. 영업 중에도 직원·결재함·일지 탭을 볼 수 있어요 (보는 동안 가게는 멈춰요).
+- **말투 샘플.** 직원 설명서에 RP 속 실제 대사를 넣으면 그 말투를 따라 해요. 다른 언어로 적어도 느낌만 살려 옮겨요.
 - **사장님이 없을 때도 가게는 돌아가요.** 다시 켜면 그동안 있었던 일이 일지로 정리돼 있어요 (최대 3일치). 자리 비운 사이에 망하지는 않아요.
 - **능력과 성격은 따로.** 제빵·접객 능력은 자라지만 성격은 카드 그대로예요. 유능한 직원도 사고를 칠 수 있어요.
 - **친해진다고 쉬워지지 않아요.** 관계는 대사와 태도를 바꾸지만 숫자 보너스는 없어요.
@@ -76,6 +78,8 @@ A shop-management extension for SillyTavern: characters from your character card
 
 - **Watch the shop.** A small isometric shop where your staff bake at the oven, take orders at the counter, mop the floor, and sometimes sneak a slice of cake. Drag to look around, pinch to zoom.
 - **5–10 minutes a day.** 🌅 Morning prep (stock & prices) → ☕ Business (events pop up as "!") → 🌙 Closing (earnings, staff diaries).
+- **Decide, delegate, or later.** Tap a "!" to choose, leave it to the staff (they handle it their own way), or put it off. You can check the Staff, Inbox and Log tabs during business (the shop waits while you look).
+- **Voice samples.** Paste real roleplay lines into a staff manual and they'll talk like that — in any language, the feel carries over.
 - **The shop runs while you're away.** When you come back, a log of what happened is waiting (up to 3 days). The shop can't go bankrupt while you're gone.
 - **Skills ≠ personality.** Baking and service grow; personality stays true to the card. Even a pro can cause trouble.
 - **Friendship doesn't make it easy.** Bonds change dialogue and attitude, never the numbers.

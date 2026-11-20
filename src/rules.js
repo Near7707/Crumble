@@ -155,7 +155,7 @@ export const EVENT_KINDS = {
         choices: [
             { label: K('정중히 사과하고 새로 만들어 주기', 'Apologize and remake it'), eff: { rep: 1, ing: -1, mood: -6, ok: true, skill: 'serve' } },
             { label: K('그냥 환불해 주기', 'Just refund it'), eff: { money: -4000, mood: -2 } },
-            { label: K('직원에게 알아서 하라고 맡기기', 'Let the staff handle it'), eff: { rep: 2, mood: -3, relBoss: 2, ok: true, skill: 'serve', gamble: true } },
+            { label: K('직원에게 알아서 하라고 맡기기', 'Let the staff handle it'), eff: { rep: 2, mood: -3, relBoss: 2, ok: true, skill: 'serve', gamble: true, delegate: true } },
         ],
         fb: { s: K('손님이 크림이 적다며 목소리를 높여요.', 'A customer is loudly complaining there is too little cream.'), guest: K('"이거 사진이랑 다르잖아요?"', '"This looks nothing like the picture."'), staff: K('"…그게, 오늘 크림이 좀…"', '"Well… about the cream today…"') },
     },
@@ -185,7 +185,7 @@ export const EVENT_KINDS = {
         choices: [
             { label: K('가장 자신 있는 메뉴를 정성껏', 'Serve your best, carefully'), eff: { rep: 6, ing: -2, ok: true, skill: 'bake', skillCheck: 6 } },
             { label: K('평소대로 내기', 'Serve as usual'), eff: { rep: 3, skillCheck: 5, skill: 'bake' } },
-            { label: K('직원에게 맡기기', 'Leave it to the staff'), eff: { rep: 4, gamble: true, skill: 'bake' } },
+            { label: K('직원에게 맡기기', 'Leave it to the staff'), eff: { rep: 4, gamble: true, skill: 'bake', delegate: true } },
         ],
         fb: { s: K('노트에 뭔가 적는 손님… 리뷰어 같아요.', 'A customer taking notes… looks like a reviewer.'), guest: K('"추천 메뉴가 뭔가요?"', '"What do you recommend?"'), staff: K('"(긴장)"', '"(nervous)"') },
     },
@@ -235,7 +235,7 @@ export const EVENT_KINDS = {
         choices: [
             { label: K('솔직히 사과하기', 'Apologize honestly'), eff: { money: -20000, rep: -3 } },
             { label: K('지금 당장 다 같이 청소', 'Everyone cleans right now'), eff: { money: -10000, rep: -1, clean: 20, fatigue: 10 } },
-            { label: K('직원에게 설명하게 두기', 'Let the staff explain'), eff: { money: -15000, rep: -2, gamble: true } },
+            { label: K('직원에게 설명하게 두기', 'Let the staff explain'), eff: { money: -15000, rep: -2, gamble: true, delegate: true } },
         ],
         fb: { s: K('위생 점검 나왔습니다. 바닥이…', 'Health inspector here. About this floor…'), guest: K('"여기 얼룩은 언제부터죠?"', '"How long has this stain been here?"'), staff: K('"그, 그게…"', '"W-well…"') },
     },
@@ -244,7 +244,7 @@ export const EVENT_KINDS = {
         who: g => tagStaff(g, ['glutton', 'lazy']),
         choices: [
             { label: K('따끔하게 혼내기', 'Scold them'), eff: { mood: -10, relBoss: -5 } },
-            { label: K('못 본 척 넘어가기', 'Let it slide'), eff: { ing: -1, relBoss: 4 } },
+            { label: K('못 본 척 넘어가기', 'Let it slide'), eff: { ing: -1, relBoss: 4, slide: true } },
             { label: K('하나 같이 먹기', 'Have one together'), eff: { ing: -2, mood: 10, relBoss: 8 } },
         ],
         fb: { s: K('진열대 뒤에서 오물오물 소리가…', 'Munching sounds behind the display…'), guest: K('', ''), staff: K('"마, 맛만 보는 거예요!"', '"J-just a taste!"') },
@@ -254,7 +254,7 @@ export const EVENT_KINDS = {
         choices: [
             { label: K('둘 다 불러서 화해시키기', 'Get them to make up'), eff: { pairRel: 10, mood: -2 } },
             { label: K('한쪽 편 들기', 'Take one side'), eff: { pairRel: -6, relBoss: 4, relBoss2: -8 } },
-            { label: K('모른 척', 'Stay out of it'), eff: { pairRel: -10, rep: -1 } },
+            { label: K('모른 척', 'Stay out of it'), eff: { pairRel: -10, rep: -1, slide: true } },
         ],
         fb: { s: K('주방에서 언성이 높아졌어요.', 'Voices are rising in the kitchen.'), guest: K('', ''), staff: K('"그건 네가 잘못했잖아!"', '"That was your fault!"') },
     },
@@ -263,7 +263,7 @@ export const EVENT_KINDS = {
         choices: [
             { label: K('사이좋다고 칭찬하기', 'Praise their teamwork'), eff: { mood: 6, relBoss: 3 } },
             { label: K('일할 땐 떨어져 있으라고 하기', 'Tell them to split up while working'), eff: { mood: -4, relBoss: -3, rep: 1 } },
-            { label: K('그냥 둔다', 'Leave them be'), eff: { gamble: true } },
+            { label: K('그냥 둔다', 'Leave them be'), eff: { gamble: true, slide: true } },
         ],
         fb: { s: K('두 사람이 같이 붙어서 일하고 있어요.', 'The two are working side by side again.'), guest: K('', ''), staff: K('"이거 내가 할게~"', '"I\'ve got this one~"') },
     },
@@ -271,7 +271,7 @@ export const EVENT_KINDS = {
         cat: 'staff', label: K('지각', 'Late'), tiers: ['low', 'mid', 'high'], auto: true, early: true,
         who: g => workingStaff(g).filter(s => (s.fatigue ?? 0) > 65 || hasTag(s.id, 'lazy')).map(s => s.id)[0],
         choices: [
-            { label: K('괜찮다고 해 주기', 'Say it\'s fine'), eff: { relBoss: 5, mood: 5 } },
+            { label: K('괜찮다고 해 주기', 'Say it\'s fine'), eff: { relBoss: 5, mood: 5, slide: true } },
             { label: K('한마디 하기', 'Have a word'), eff: { relBoss: -6, mood: -5 } },
             { label: K('월급에서 깎기', 'Dock their pay'), eff: { money: 5000, relBoss: -14, mood: -10 } },
         ],
@@ -284,7 +284,7 @@ export const EVENT_KINDS = {
         choices: [
             { label: K('할인 행사로 맞서기', 'Fight back with a sale'), eff: { money: -10000, rep: 2 } },
             { label: K('우리는 우리 길로', 'Stay our course'), eff: { rep: 0 } },
-            { label: K('직원 의견 들어 보기', 'Ask the staff'), eff: { gamble: true, mood: 4 } },
+            { label: K('직원 의견 들어 보기', 'Ask the staff'), eff: { gamble: true, mood: 4, delegate: true } },
         ],
         fb: { s: K('길 건너에 큰 체인 카페가 문을 열었어요.', 'A big chain café just opened across the street.'), guest: K('', ''), staff: K('"저기 줄 엄청 길어요…"', '"Their line is huge…"') },
     },
@@ -387,10 +387,43 @@ export function clampEff(eff = {}) {
 }
 
 /** 사장님 선택 → 결과 적용. 반환: {line, interfere, delta, ok} */
-export function resolveEvent(g, ev, ci, biz) {
+/** 원래부터 "직원에게 맡기기" 뜻인 선택지 번호 (없으면 -1) — 이 사건에선 [맡기기] 버튼이 이걸 고름 */
+/** 직원 본인에 대한 사건이라 [맡기기]가 어울리지 않는지 */
+export const canDelegate = ev => EVENT_KINDS[ev.kind]?.cat !== 'staff';
+export const delegateIndex = ev => (EVENT_KINDS[ev.kind]?.choices || []).findIndex(c => c.eff?.delegate);
+
+/** 직원에게 맡겼을 때 (또는 사장님이 오래 안 봤을 때) 직원이 성격대로 고르는 선택지 */
+export function staffPick(g, ev) {
+    const k = EVENT_KINDS[ev.kind]; if (!k) return 0;
+    const d = delegateIndex(ev);
+    if (d >= 0) return d;
+    // 직원 본인 일(지각·몰래 먹기·싸움 등)은 사장님이 안 봤으면 그냥 넘어간 걸로
+    if (k.cat === 'staff') { const sl = k.choices.findIndex(c => c.eff?.slide); return sl >= 0 ? sl : 0; }
+    const id = ev.staffIds[0];
+    const has = (...t) => hasTag(id, ...t);
+    let best = 0, top = -Infinity;
+    k.choices.forEach((c, i) => {
+        const e = c.eff || {};
+        let v = Math.random() * 1.2; // 성격이 딱히 안 정하면 그날 기분
+        if (has('greedy')) v += (e.money || 0) / 4000 + Math.min(0, e.ing || 0) * .3;
+        if (has('kind', 'cheerful', 'flatterer')) v += (e.rep || 0) * .3 + (e.mood || 0) * .05 + (e.relBoss || 0) * .05 + (e.pairRel || 0) * .05;
+        if (has('chatty')) v += (e.mood || 0) * .06;
+        if (has('diligent', 'perfectionist', 'neat')) v += (e.ok ? 1 : 0) + (e.skill ? .4 : 0) + (e.clean || 0) * .03;
+        if (has('lazy')) v -= (e.skill ? .8 : 0) + (e.fatigue || 0) * .05 + (e.clean ? .5 : 0);
+        if (has('glutton')) v += Math.min(0, e.ing || 0) * -.4;
+        if (has('timid', 'quiet')) v -= Math.abs(e.rep || 0) * .15 + Math.abs(e.relBoss || 0) * .03;
+        if (has('rebel', 'prickly')) v += Math.random() * .8 - (e.relBoss || 0) * .04;
+        if (v > top) { top = v; best = i; }
+    });
+    return best;
+}
+
+export function resolveEvent(g, ev, ci, biz, byStaff = false) {
     const k = EVENT_KINDS[ev.kind];
     const base = k.choices[ci]?.eff || {};
-    const ai = ev.text?.choices?.[ci] || {};
+    let ai = ev.text?.choices?.[ci] || {};
+    // 직원이 스스로 고른 거면 "사장님 말을 안 들음"(interfere) 조정은 쓰지 않음
+    if (byStaff) ai = { line: ai.line };
     const main = staffById(ev.staffIds[0]);
     let eff = { ...base };
     // AI가 성격이 끼어들었다고 하면 그 범위 안에서 조정

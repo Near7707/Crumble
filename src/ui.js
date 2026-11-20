@@ -11,13 +11,13 @@ import {
 } from './rules.js';
 import { faceChip, faceStyle, ICON } from './looks.js';
 import { createScene } from './scene.js';
-import { awayJournal, makeManual, FALLBACK_KEYS, bossLabel } from './ai.js';
+import { awayJournal, makeManual, FALLBACK_KEYS, bossLabel, remakeLines, cardExampleLines } from './ai.js';
 import { line, tapLine } from './lines.js';
 import { renderBusiness, resumeIfNeeded, businessActive, pauseBusiness, bizPaused } from './screens.js';
 import { fieldsHtml, bindFields, onSettings, personaName, setBossName } from './settings.js';
 import { renderEnding } from './ending.js';
 
-export const view = { tab: 'shop', staffIdx: 0, staffSub: 'stats', journal: 'this', open: false };
+export const view = { tab: 'shop', staffIdx: 0, staffSub: 'stats', journal: 'this', open: false, bizTab: 'biz' };
 let root = null, scenes = [], shopTimer = null, awayBusy = false;
 
 export function addScene(s) { scenes.push(s); return s; }
@@ -99,7 +99,7 @@ export function closeWindow() {
     if (!root) return;
     root.classList.remove('open');
     view.open = false;
-    if (businessActive()) { pauseBusiness(true); return; } // 장면은 그대로 두고 멈춤
+    if (businessActive()) { bizAutoPaused = false; pauseBusiness(true); return; } // 장면은 그대로 두고 멈춤 (다시 열면 "멈춤" 띠)
     killScenes();
 }
 
@@ -116,14 +116,25 @@ async function runAway(days) {
 }
 
 // ---------- 그리기 ----------
+const BIZ = ['morning', 'open', 'close'];
+export const bizLocked = () => BIZ.includes(G()?.phase);
 export function render() {
     if (!root) return;
-    killScenes();
-    closeSheet(); closeModal();
     const g = ensureGame();
     const box = inner();
+    // 영업 중 다른 탭을 보고 있으면 그 탭만 다시 그림 (영업 장면은 숨겨 둔 채 그대로)
+    if (BIZ.includes(g.phase) && view.bizTab !== 'biz' && box.querySelector(`[data-biz][data-phase="${g.phase}"]`)) { drawOtherTab(); return; }
+    killScenes();
+    closeSheet(); closeModal();
+    box.classList.remove('cr-onOther', 'cr-paused');
     if (g.phase === 'ending') { renderEnding(box); return; }
-    if (['morning', 'open', 'close'].includes(g.phase)) { renderBusiness(box); return; }
+    if (BIZ.includes(g.phase)) {
+        view.bizTab = 'biz'; bizAutoPaused = false;
+        renderBusiness(box);
+        box.querySelector('[data-biz]')?.setAttribute('data-phase', g.phase);
+        box.insertAdjacentHTML('beforeend', '<main class="cr-main cr-otherTab cr-hide"></main>');
+        return;
+    }
     box.innerHTML = headHtml() + tabsHtml() + `<main class="cr-main">${tabBody()}</main>`;
     afterTab();
 }
@@ -156,8 +167,44 @@ function tabsHtml() {
     const t = (id, ico, ko, en, badge) => `<button type="button" class="cr-tab${view.tab === id ? ' on' : ''}" data-tab="${id}">${ico} ${L(ko, en)}${badge ? `<b class="cr-badge">${badge}</b>` : ''}</button>`;
     return `<nav class="cr-tabs">${t('shop', '🏪', '가게', 'Shop')}${t('staff', '👩‍🍳', '직원', 'Staff')}${t('inbox', '📋', '결재함', 'Inbox', g.inbox.length || '')}${t('journal', '📖', '일지', 'Log')}</nav>`;
 }
-function tabBody() {
-    switch (view.tab) {
+// ---------- 영업 중 탭 ----------
+let bizAutoPaused = false;
+export function bizTabs() {
+    const g = G();
+    const t = (id, ico, ko, en, badge) => `<button type="button" class="cr-tab${view.bizTab === id ? ' on' : ''}" data-btab="${id}">${ico} ${L(ko, en)}${badge ? `<b class="cr-badge">${badge}</b>` : ''}</button>`;
+    return `<nav class="cr-tabs cr-bizTabs">${t('biz', '☕', '영업', 'Business')}${t('staff', '👩‍🍳', '직원', 'Staff')}${t('inbox', '📋', '결재함', 'Inbox', g.inbox.length || '')}${t('journal', '📖', '일지', 'Log')}</nav>`;
+}
+function drawOtherTab() {
+    const box = inner();
+    const main = box.querySelector('.cr-otherTab'); if (!main) return;
+    closeSheet(); closeModal();
+    const top = main.scrollTop;
+    main.innerHTML = `<div class="cr-alertCard soft">⏸ ${L('다른 탭을 보는 동안 가게는 멈춰 있어요', 'The shop waits while you look at other tabs')}</div>` + tabBody(view.bizTab);
+    main.scrollTop = top;
+    box.querySelectorAll('.cr-bizTabs [data-btab]').forEach(b => b.classList.toggle('on', b.dataset.btab === view.bizTab));
+    const badge = box.querySelector('.cr-bizTabs [data-btab="inbox"] .cr-badge');
+    if (badge) badge.textContent = G().inbox.length || '';
+}
+function switchBizTab(id) {
+    const box = inner();
+    if (!box.querySelector('[data-biz]')) return;
+    view.bizTab = id;
+    const other = id !== 'biz';
+    box.querySelectorAll('[data-biz]').forEach(el => el.classList.toggle('cr-hide', other));
+    box.querySelector('.cr-otherTab')?.classList.toggle('cr-hide', !other);
+    box.classList.toggle('cr-onOther', other);
+    if (other) {
+        // 다른 탭을 보는 동안은 가게를 멈춤 (사장님이 직접 멈춘 거면 그대로)
+        if (businessActive() && !bizPaused()) { pauseBusiness(true, false); bizAutoPaused = true; }
+        drawOtherTab();
+    } else {
+        box.querySelectorAll('.cr-bizTabs [data-btab]').forEach(b => b.classList.toggle('on', b.dataset.btab === 'biz'));
+        if (bizAutoPaused) { bizAutoPaused = false; pauseBusiness(false); }
+    }
+}
+
+function tabBody(tab = view.tab) {
+    switch (tab) {
         case 'staff': return staffTab();
         case 'inbox': return inboxTab();
         case 'journal': return journalTab();
@@ -257,11 +304,12 @@ function staffTab() {
     if (!g.staff.length) return `<section class="cr-card cr-empty">${L('아직 직원이 없어요.', 'No staff yet.')}<br><small class="cr-muted">${L('처음엔 3~4명까지 데려올 수 있어요.', 'You can bring in up to 3–4 people.')}</small><button class="cr-pbtn" type="button" data-act="hire">${L('직원 고용', 'Hire staff')}</button></section>`;
     view.staffIdx = clamp(view.staffIdx, 0, g.staff.length - 1);
     const s = g.staff[view.staffIdx], b = book(s.id) || {};
+    const lock = bizLocked();
     let h = `<div class="cr-row cr-pager"><button type="button" class="cr-ibtn" data-act="staffPrev" aria-label="${L('이전 직원', 'Previous')}">‹</button><span>${L('직원 상세', 'Staff')} · ${view.staffIdx + 1}/${g.staff.length}</span><button type="button" class="cr-ibtn" data-act="staffNext" aria-label="${L('다음 직원', 'Next')}">›</button><span class="cr-muted" style="margin-left:auto">${F(L('고용 {a}/{b}명', 'Hired {a}/{b}'), { a: g.staff.length, b: MAX_STAFF })}</span></div>`;
     h += `<section class="cr-card cr-profile"><div class="cr-pfFace" style="${faceStyle(s.id)}"></div><div class="cr-pfInfo"><div class="cr-row"><b class="cr-pfName">${esc(b.name)}</b><button type="button" class="cr-ibtn" data-act="staffMenu" aria-label="${L('더 보기', 'More')}">…</button></div>${heartRow(bossRel(s.id))}<div class="cr-muted">${esc(b.job || '')}</div><div class="cr-tags">${(b.tags || []).map(t => `<span class="cr-tag">${esc(tagLabel(t))}</span>`).join('')}</div><p class="cr-intro">${esc(b.intro || '')}</p></div></section>`;
     h += `<div class="cr-subtabs">${[['stats', '능력치', 'Skills'], ['manual', '설명서', 'Manual'], ['rel', '관계', 'Bonds'], ['log', '기록', 'History']].map(([id, ko, en]) => `<button type="button" class="${view.staffSub === id ? 'on' : ''}" data-act="staffSub" data-id="${id}">${L(ko, en)}</button>`).join('')}</div>`;
     h += `<section class="cr-card">${staffSub(s, b)}</section>`;
-    h += `<div class="cr-actions"><button class="cr-btn" type="button" data-act="editMemo">${L('메모 편집', 'Edit note')}</button><button class="cr-pbtn" type="button" data-act="hire" ${g.staff.length >= MAX_STAFF ? 'disabled' : ''}>${L('직원 고용', 'Hire staff')}</button></div>`;
+    h += `<div class="cr-actions"><button class="cr-btn" type="button" data-act="editMemo">${L('메모 편집', 'Edit note')}</button><button class="cr-pbtn" type="button" data-act="hire" ${g.staff.length >= MAX_STAFF || lock ? 'disabled' : ''}>${L('직원 고용', 'Hire staff')}</button></div>${lock ? `<p class="cr-muted cr-center">${L('고용·해고는 영업이 끝나면 할 수 있어요', 'Hiring and letting go open up after business')}</p>` : ''}`;
     return h;
 }
 function skillRow(s, k, label, col) {
@@ -274,10 +322,13 @@ function staffSub(s, b) {
         case 'manual': {
             const m = b.manual || {};
             const row = (ko, en, v) => v ? `<div class="cr-mrow"><b>${L(ko, en)}</b><p>${esc(v)}</p></div>` : '';
-            return row('성격', 'Personality', m.personality) + row('말투', 'Speech', m.speech) + row('가치관', 'Values', m.values) + row('행동 원칙', 'How they act', m.principles) + row('단점', 'Flaws', m.flaws) + row('사장·일을 대하는 태도', 'Attitude to boss & work', m.attitude) +
+            const lv = { casual: L('반말', 'Casual (banmal)'), polite: L('존댓말', 'Polite (jondaetmal)') }[b.speechLevel];
+            const voice = String(b.voice || '').split('\n').map(x => x.trim()).filter(Boolean);
+            return (voice.length || lv ? `<div class="cr-mrow cr-voice"><b>🎙 ${L('말투 샘플', 'Voice samples')}${lv && isKo() ? ` <span class="cr-tag">${lv}</span>` : ''}</b>${voice.map(x => `<p class="cr-quote">“${esc(x)}”</p>`).join('')}</div>` : `<p class="cr-muted">🎙 ${L('[고치기]에서 RP 속 실제 대사를 "말투 샘플"에 넣으면 그 말투를 따라 해요.', 'Add real roleplay lines as "Voice samples" in [Edit] and they\'ll talk like that.')}</p>`) +
+                row('성격', 'Personality', m.personality) + row('말투', 'Speech', m.speech) + row('가치관', 'Values', m.values) + row('행동 원칙', 'How they act', m.principles) + row('단점', 'Flaws', m.flaws) + row('사장·일을 대하는 태도', 'Attitude to boss & work', m.attitude) +
                 (m.examples?.length ? `<div class="cr-mrow"><b>${L('예시 대사', 'Example lines')}</b>${m.examples.map(x => `<p class="cr-quote">“${esc(x)}”</p>`).join('')}</div>` : '') +
                 linesBox(b) +
-                `<div class="cr-actions"><button class="cr-btn" type="button" data-act="editManual">${L('고치기', 'Edit')}</button><button class="cr-btn" type="button" data-act="reextract">${L('카드에서 다시 뽑기', 'Re-read from card')}</button></div><p class="cr-muted">${L('다시 뽑아도 가게 기억(관계·기록)은 그대로예요.', 'Re-reading keeps shop memories (bonds, history).')}</p>`;
+                `<div class="cr-actions"><button class="cr-btn" type="button" data-act="editManual">${L('고치기', 'Edit')}</button><button class="cr-btn" type="button" data-act="remakeLines">${L('말풍선 다시 만들기', 'Remake bubbles')}</button></div><div class="cr-actions"><button class="cr-btn" type="button" data-act="reextract">${L('카드에서 다시 뽑기', 'Re-read from card')}</button></div><p class="cr-muted">${L('다시 뽑아도 가게 기억(관계·기록)은 그대로예요.', 'Re-reading keeps shop memories (bonds, history).')}</p>`;
         }
         case 'rel': {
             const others = [{ id: 'boss' }, ...g.staff.filter(o => o.id !== s.id)];
@@ -308,7 +359,8 @@ function inboxTab() {
     for (const it of g.inbox) {
         const info = inboxInfo(it);
         const say = it.line ? `<p class="cr-say">“${esc(it.line)}”</p>` : '';
-        h += `<section class="cr-card cr-ib ${info.tag}">${it.staffId && staffById(it.staffId) ? faceChip(it.staffId, 36) : '<span class="cr-face blank big">📋</span>'}<div style="flex:1"><div class="cr-row"><span class="cr-ibTag ${info.tag}">${{ idea: L('제안', 'Idea'), complaint: L('불만', 'Complaint'), money: L('돈', 'Money') }[info.tag]}</span><b>${esc(info.title)}</b></div>${say}<p class="cr-muted">${esc(info.desc)}</p><div class="cr-actions"><button class="cr-btn" type="button" data-act="ibNo" data-id="${it.id}">${esc(info.b)}</button><button class="cr-pbtn sm" type="button" data-act="ibYes" data-id="${it.id}">${esc(info.a)}</button></div></div></section>`;
+        const held = bizLocked(); // 영업 중엔 보기만 (돈 계산·직원이 꼬이지 않게)
+        h += `<section class="cr-card cr-ib ${info.tag}">${it.staffId && staffById(it.staffId) ? faceChip(it.staffId, 36) : '<span class="cr-face blank big">📋</span>'}<div style="flex:1"><div class="cr-row"><span class="cr-ibTag ${info.tag}">${{ idea: L('제안', 'Idea'), complaint: L('불만', 'Complaint'), money: L('돈', 'Money') }[info.tag]}</span><b>${esc(info.title)}</b></div>${say}<p class="cr-muted">${esc(info.desc)}</p><div class="cr-actions"><button class="cr-btn" type="button" data-act="ibNo" data-id="${it.id}" ${held ? 'disabled' : ''}>${esc(info.b)}</button><button class="cr-pbtn sm" type="button" data-act="ibYes" data-id="${it.id}" ${held ? 'disabled' : ''}>${esc(info.a)}</button></div>${held ? `<p class="cr-muted">${L('영업이 끝나면 정할 수 있어요', 'You can decide after business')}</p>` : ''}</div></section>`;
     }
     for (let i = g.inbox.length; i < MAX_INBOX; i++) h += `<div class="cr-slot">${L('빈 자리', 'Empty')}</div>`;
     if (g.inboxHistory.length) h += `<details class="cr-card"><summary>${L('지난 결재 기록 보기', 'Past decisions')}</summary>${g.inboxHistory.slice(0, 20).map(x => `<div class="cr-hist"><span class="cr-pill day sm">${F(L('{n}일', 'D{n}'), { n: x.day })}</span>${esc(x.title)} → <b>${x.yes ? L('승인', 'Yes') : L('거절', 'No')}</b></div>`).join('')}</details>`;
@@ -519,11 +571,12 @@ function staffMenu() {
     const m = openModal(`<div class="cr-mtitle">${esc(book(s.id)?.name)}</div><div class="cr-menuList">
 <button type="button" class="cr-btn" data-m="face">${L('얼굴 위치 맞추기', 'Adjust face')}</button>
 <button type="button" class="cr-btn" data-m="mini" disabled title="${L('4단계에서 추가될 예정', 'Coming later')}">${L('미니 모습 (준비 중)', 'Mini sprite (coming later)')}</button>
-<button type="button" class="cr-btn danger" data-m="fire">${L('해고', 'Let go')}</button>
+<button type="button" class="cr-btn danger" data-m="fire" ${bizLocked() ? 'disabled' : ''}>${L('해고', 'Let go')}${bizLocked() ? ` <small>· ${L('영업 끝나고', 'after business')}</small>` : ''}</button>
 <button type="button" class="cr-btn" data-act="modalClose">${L('닫기', 'Close')}</button></div>`);
     m.querySelector('[data-m=face]').onclick = e => { e.stopPropagation(); faceModal(s.id); };
     m.querySelector('[data-m=fire]').onclick = async e => {
         e.stopPropagation();
+        if (bizLocked()) return;
         if (await confirmBox(F(L('{n} 님을 해고할까요? 가게 기억은 남아요.', 'Let {n} go? Their shop memories stay.'), { n: book(s.id)?.name }), L('해고', 'Let go'))) { fireStaff(s.id); view.staffIdx = 0; render(); }
     };
 }
@@ -540,7 +593,7 @@ function lineKeyLabel(k) {
 
 function linesBox(b) {
     const ln = b.lines || {};
-    if (!Object.keys(ln).length) return `<p class="cr-muted">${L('기본 말풍선이 아직 없어요. [카드에서 다시 뽑기]를 하면 이 직원 말투로 만들어져요.', 'No fallback bubbles yet. [Re-read from card] makes them in this character\'s voice.')}</p>`;
+    if (!Object.keys(ln).length) return `<p class="cr-muted">${L('기본 말풍선이 아직 없어요. [말풍선 다시 만들기]를 누르면 이 직원 말투로 만들어져요.', 'No fallback bubbles yet. [Remake bubbles] makes them in this character\'s voice.')}</p>`;
     return `<details class="cr-card flat cr-linesBox"><summary><b>${L('기본 말풍선', 'Fallback bubbles')}</b> <small class="cr-muted">${L('AI가 응답하지 않을 때 장면에서 써요', 'Used in the scene when the AI doesn\'t answer')}</small></summary>${FALLBACK_KEYS.filter(k => ln[k]).map(k => `<div class="cr-lineRow"><span class="cr-muted">${esc(lineKeyLabel(k))}</span><span>“${esc(ln[k])}”</span></div>`).join('')}</details>`;
 }
 
@@ -549,6 +602,11 @@ function editManual() {
     const tags = [...(b.tags || [])];
     const fields = [['personality', '성격', 'Personality'], ['speech', '말투', 'Speech'], ['values', '가치관', 'Values'], ['principles', '행동 원칙', 'How they act'], ['flaws', '단점', 'Flaws'], ['attitude', '사장·일을 대하는 태도', 'Attitude to boss & work']];
     const m = openModal(`<div class="cr-mtitle">${L('설명서 고치기', 'Edit manual')}</div>
+<label class="cr-field">🎙 ${L('말투 샘플 (줄마다 하나)', 'Voice samples (one per line)')}<textarea class="cr-input" data-f="voice" rows="5" maxlength="1500" placeholder="${esc(L('RP에서 이 캐릭터가 실제로 한 대사를 붙여 넣어 주세요. 영어 대사도 괜찮아요.', 'Paste lines this character actually said in your roleplay. Any language is fine.'))}">${esc(b.voice || '')}</textarea></label>
+<div class="cr-row" style="flex-wrap:wrap"><button type="button" class="cr-btn sm" data-x="cardEx">${L('카드 예시 대화에서 가져오기', 'Take from card examples')}</button><small class="cr-muted">${L('가져온 뒤 어색한 줄은 지워 주세요', 'Delete any odd lines after')}</small></div>
+<small class="cr-muted">${L('AI가 이 샘플을 가장 먼저 따라요. 다른 언어로 적어도 말투의 느낌만 살려서 옮겨요.', 'The AI follows these first. Other languages are fine — the feel is carried over, not word-for-word.')}</small>
+<label class="cr-field">${L('한국어 말 높이', 'Korean speech level')}<select class="cr-input" data-f="speechLevel">${[['auto', L('알아서 (샘플·설명서대로)', 'Auto (from samples/manual)')], ['casual', L('반말', 'Casual (banmal)')], ['polite', L('존댓말', 'Polite (jondaetmal)')]].map(([v, t]) => `<option value="${v}" ${(b.speechLevel || 'auto') === v ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select></label>
+<small class="cr-muted">${L('한국어로 할 때만 써요.', 'Only used when playing in Korean.')}</small>
 <label class="cr-field">${L('직업', 'Job')}<input class="cr-input" data-f="job" value="${esc(b.job || '')}"></label>
 <label class="cr-field">${L('소개', 'Intro')}<textarea class="cr-input" data-f="intro" rows="2">${esc(b.intro || '')}</textarea></label>
 ${fields.map(([k, ko, en]) => `<label class="cr-field">${L(ko, en)}<textarea class="cr-input" data-m="${k}" rows="3">${esc(mn[k] || '')}</textarea></label>`).join('')}
@@ -556,6 +614,16 @@ ${fields.map(([k, ko, en]) => `<label class="cr-field">${L(ko, en)}<textarea cla
 <div class="cr-field">${L('성격 태그 (1~3개)', 'Personality tags (1–3)')}<div class="cr-tags cr-tagPick">${Object.keys(TAGS).map(t => `<button type="button" class="cr-tag${tags.includes(t) ? ' on' : ''}" data-tag="${t}" aria-pressed="${tags.includes(t)}">${esc(tagLabel(t))}</button>`).join('')}</div><small class="cr-muted">${L('태그는 오늘 일어날 사건과 가게 안에서 돌아다니는 모습에만 쓰여요. 대사는 설명서를 따라요.', 'Tags only pick events and how they move around the shop. Lines follow the manual.')}</small></div>
 ${b.lines && Object.keys(b.lines).length ? `<label class="cr-field">${L('기본 말풍선 (AI가 응답하지 않을 때)', 'Fallback bubbles (when the AI doesn\'t answer)')}${FALLBACK_KEYS.map(k => `<span class="cr-lineEdit"><small class="cr-muted">${esc(lineKeyLabel(k))}</small><input class="cr-input" data-l="${k}" maxlength="60" value="${esc(b.lines[k] || '')}" placeholder="${esc(L('비우면 공통 대사', 'Blank = common line'))}"></span>`).join('')}</label>` : ''}
 <div class="cr-actions"><button class="cr-btn" type="button" data-act="modalClose">${L('취소', 'Cancel')}</button><button class="cr-pbtn sm" type="button" data-act="manualOk">${L('저장', 'Save')}</button></div>`);
+    m.querySelector('[data-x="cardEx"]').onclick = e => {
+        e.stopPropagation();
+        const got = cardExampleLines(b.avatar || s.id);
+        if (!got.length) { toast(L('카드에 가져올 예시 대화가 없어요', 'No example dialogue found on the card')); return; }
+        const ta = m.querySelector('[data-f=voice]');
+        const have = new Set(ta.value.split('\n').map(x => x.trim()).filter(Boolean));
+        const add = got.filter(x => !have.has(x));
+        ta.value = [...have, ...add].join('\n').slice(0, 1500);
+        toast(F(L('{n}줄 가져왔어요', 'Added {n} lines'), { n: add.length }));
+    };
     m.querySelectorAll('[data-tag]').forEach(btn => btn.onclick = e => {
         e.stopPropagation();
         const t = btn.dataset.tag, i = tags.indexOf(t);
@@ -568,10 +636,23 @@ ${b.lines && Object.keys(b.lines).length ? `<label class="cr-field">${L('기본 
         b.tags = [...tags];
         if (b.lines) m.querySelectorAll('[data-l]').forEach(i => { const v = i.value.trim().slice(0, 60); if (v) b.lines[i.dataset.l] = v; else delete b.lines[i.dataset.l]; });
         b.job = m.querySelector('[data-f=job]').value.trim(); b.intro = m.querySelector('[data-f=intro]').value.trim();
+        b.voice = m.querySelector('[data-f=voice]').value.split('\n').map(x => x.trimEnd()).filter(x => x.trim()).join('\n').slice(0, 1500);
+        b.speechLevel = m.querySelector('[data-f=speechLevel]').value;
         b.manual ??= {};
         m.querySelectorAll('[data-m]').forEach(t => { b.manual[t.dataset.m] = t.dataset.m === 'examples' ? t.value.split('\n').map(x => x.trim()).filter(Boolean).slice(0, 6) : t.value.trim(); });
         save(); closeModal(); render();
+        if (b.voice) toast(L('[말풍선 다시 만들기]를 누르면 기본 말풍선도 이 말투로 바뀌어요', 'Tap [Remake bubbles] to redo the fallback bubbles in this voice'), 3600);
     };
+}
+
+async function remakeLinesFlow() {
+    const g = G(); const s = g.staff[view.staffIdx]; const b = book(s.id);
+    if (!await confirmBox(L('설명서와 말투 샘플로 기본 말풍선 15줄을 새로 만들까요? AI를 한 번 불러요. 직접 고친 말풍선은 바뀌어요.', 'Rewrite the 15 fallback bubbles from the manual and voice samples? This calls the AI once. Your hand-edited bubbles will be replaced.'), L('다시 만들기', 'Remake'))) return;
+    openModal(`<div class="cr-loading big">${L('말투를 맞추는 중…', 'Matching their voice…')}</div>`);
+    const r = await remakeLines(s.id);
+    if (!r) { closeModal(); toast(L('AI 응답을 받지 못했어요', 'No AI response')); return; }
+    b.lines = r.lines; b.linesLang = r.linesLang;
+    save(); closeModal(); render(); toast(L('기본 말풍선을 새로 만들었어요', 'Fallback bubbles remade'));
 }
 
 async function reextract() {
@@ -605,9 +686,10 @@ function quickBuy() {
 
 // ---------- 클릭 ----------
 async function onClick(e) {
-    const t = e.target.closest('[data-act],[data-tab]');
+    const t = e.target.closest('[data-act],[data-tab],[data-btab]');
     if (!t || !root.contains(t)) return;
     if (t.dataset.tab) { view.tab = t.dataset.tab; render(); return; }
+    if (t.dataset.btab) { switchBizTab(t.dataset.btab); return; }
     const g = G();
     const a = t.dataset.act;
     switch (a) {
@@ -615,7 +697,7 @@ async function onClick(e) {
         case 'settings': openSettings(); break;
         case 'modalClose': closeModal(); break;
         case 'toJournal': view.tab = 'journal'; view.journal = 'this'; render(); break;
-        case 'hire': if (g.staff.length < MAX_STAFF) hirePicker(); break;
+        case 'hire': if (g.staff.length < MAX_STAFF && !bizLocked()) hirePicker(); break;
         case 'hireRetry': hireFlow(t.dataset.id); break;
         case 'staffPrev': view.staffIdx = (view.staffIdx - 1 + g.staff.length) % g.staff.length; render(); break;
         case 'staffNext': view.staffIdx = (view.staffIdx + 1) % g.staff.length; render(); break;
@@ -623,11 +705,13 @@ async function onClick(e) {
         case 'staffMenu': staffMenu(); break;
         case 'editManual': editManual(); break;
         case 'reextract': reextract(); break;
+        case 'remakeLines': remakeLinesFlow(); break;
         case 'editMemo': editMemo(); break;
         case 'jMode': view.journal = t.dataset.id; render(); break;
         case 'quickBuy': quickBuy(); break;
         case 'nextDay': nextDayNow(); render(); break;
-        case 'ibYes': case 'ibNo': { const note = decideInbox(t.dataset.id, a === 'ibYes'); render(); if (note) toast(note); break; }
+        case 'ibYes': case 'ibNo': {
+            if (bizLocked()) break; const note = decideInbox(t.dataset.id, a === 'ibYes'); render(); if (note) toast(note); break; }
         case 'findStaff': {
             const ss = root.__shopScene; if (!ss) break;
             const ent = ss.ents.find(x => x.staffId === t.dataset.id);
