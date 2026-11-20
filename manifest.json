@@ -1,0 +1,12 @@
+{
+    "display_name": "Crumble",
+    "loading_order": 120,
+    "requires": [],
+    "optional": [],
+    "js": "index.js",
+    "css": "style.css",
+    "author": "Near7707",
+    "version": "0.1.0",
+    "homePage": "https://github.com/Near7707/Crumble",
+    "auto_update": true
+}

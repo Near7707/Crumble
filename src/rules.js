@@ -1,0 +1,715 @@
+// 게임 규칙 — 수치 계산은 전부 여기서 (AI는 글만 쓴다)
+import { clamp, pick, chance, randi, shuffle, uid, dayKey, daysBetween } from './util.js';
+import {
+    G, S, save, book, staffById, rel, addRel, bossRel, remember, addJournal, addExp,
+    WAGE, ING_PRICE, MAX_INBOX, menuInfo, MENU_POOL,
+} from './state.js';
+import { L } from './i18n.js';
+
+// ---------- 성격 태그 (사건 고르기·장면 행동에만 씀) ----------
+export const TAGS = {
+    glutton: ['먹보', 'Glutton'], lazy: ['게으름', 'Lazy'], chatty: ['수다쟁이', 'Chatty'],
+    clumsy: ['덜렁이', 'Clumsy'], diligent: ['성실', 'Diligent'], quiet: ['조용함', 'Quiet'],
+    neat: ['깔끔쟁이', 'Neat freak'], kind: ['다정함', 'Kind'], prickly: ['까칠함', 'Prickly'],
+    flatterer: ['아부쟁이', 'Flatterer'], rebel: ['반항적', 'Rebellious'], timid: ['소심함', 'Timid'],
+    perfectionist: ['완벽주의', 'Perfectionist'], cheerful: ['명랑함', 'Cheerful'], greedy: ['돈 밝힘', 'Money-minded'],
+};
+export const tagLabel = t => (TAGS[t] ? L(...TAGS[t]) : t);
+export const hasTag = (id, ...t) => (book(id)?.tags || []).some(x => t.includes(x));
+
+export const WEATHER = {
+    sun: { icon: '☀️', n: ['맑음', 'Sunny'], mult: 1 },
+    cloud: { icon: '⛅', n: ['흐림', 'Cloudy'], mult: .95 },
+    rain: { icon: '🌧', n: ['비', 'Rain'], mult: .7 },
+    hot: { icon: '🔆', n: ['더움', 'Hot'], mult: 1.05 },
+};
+export const weatherLabel = w => `${WEATHER[w]?.icon || ''} ${L(...(WEATHER[w]?.n || WEATHER.sun.n))}`;
+
+export function rollWeather() {
+    const m = new Date().getMonth() + 1;
+    const summer = m >= 6 && m <= 8, rainy = m === 7;
+    const r = Math.random();
+    if (r < (rainy ? .35 : .18)) return 'rain';
+    if (r < (rainy ? .5 : .33)) return 'cloud';
+    if (summer && r < .65) return 'hot';
+    return 'sun';
+}
+
+export const repTier = rep => (rep < 35 ? 'low' : rep < 65 ? 'mid' : 'high');
+export const workingStaff = g => g.staff.filter(s => !s.absent);
+
+// ---------- 역할: 능력이 높은 쪽으로 ----------
+export function assignRoles(g) {
+    const list = workingStaff(g);
+    list.forEach(s => (s.role = 'floor'));
+    if (!list.length) return;
+    if (list.length === 1) { list[0].role = 'all'; return; }
+    const baker = [...list].sort((a, b) => b.bake - a.bake || a.serve - b.serve)[0];
+    baker.role = 'bake';
+    const rest = list.filter(s => s !== baker);
+    const server = [...rest].sort((a, b) => b.serve - a.serve)[0];
+    server.role = 'serve';
+}
+export const roleLabel = r => L(...({ bake: ['제빵', 'Baking'], serve: ['계산대', 'Counter'], floor: ['홀·청소', 'Floor'], all: ['혼자 다', 'Everything'] }[r] || ['', '']));
+
+// ---------- 하루 시작 ----------
+/** 다시 켰을 때: 지난 날들을 자동 운영으로 계산할 목록을 만든다 (최대 3일) */
+export function catchUp() {
+    const g = G(); if (!g) return null;
+    const today = dayKey();
+    const diff = daysBetween(g.dayKey, today);
+    if (diff <= 0) return null;
+    if (g.phase === 'close') finishClose(g);
+    // 지난 날을 직접 영업했으면 그날은 빼고, 아니면 그날도 자동 운영
+    let missed = g.phase === 'done' ? diff - 1 : diff;
+    if (g.phase === 'ending') return null;
+    missed = clamp(missed, 0, 3);
+    const days = [];
+    for (let i = 0; i < missed; i++) days.push(autoDay(g));
+    // 오늘
+    g.day += 1;
+    g.dayKey = today;
+    startDay(g);
+    save();
+    return days.length ? days : null;
+}
+
+export function startDay(g) {
+    g.phase = 'ready';
+    g.weather = rollWeather();
+    g.today = null;
+    g.effects = g.effects.filter(e => e.until >= g.day);
+    // 아침 회복 · 결근
+    for (const s of g.staff) {
+        s.fatigue = clamp((s.fatigue ?? 30) - 28, 0, 100);
+        s.absent = !!s.restNext || (s.fatigue >= 85 && chance(.7));
+        if (s.restNext) { s.restNext = false; s.mood = clamp((s.mood ?? 60) + 15, 0, 100); }
+        if (s.absent) s.fatigue = clamp(s.fatigue - 30, 0, 100);
+        s.mood = clamp((s.mood ?? 60) + (s.mood < 50 ? 6 : 0), 0, 100);
+        if (g.money < 0) s.mood = clamp(s.mood - 8, 0, 100); // 월급 밀림
+    }
+    assignRoles(g);
+}
+
+/** 마감 화면에서 [마감하고 하루 끝] */
+export function finishClose(g) {
+    if (g.phase !== 'close') return;
+    g.phase = g.today?.closed?.ended ? 'ending' : 'done';
+    save();
+}
+
+/** 바로 다음 날로 (설정 "기다리지 않고 바로 다음 날") */
+export function nextDayNow() {
+    const g = G();
+    if (g.phase !== 'done') return;
+    g.day += 1;
+    startDay(g);
+    save();
+}
+
+export function canOpenToday(g) {
+    return g.phase === 'ready' && workingStaff(g).length > 0;
+}
+
+// ---------- 아침 계산 ----------
+export function priceFactor(g) {
+    const ms = g.menu;
+    return ms.reduce((s, m) => s + Math.pow(menuInfo(m.id).base / m.p, 1.3), 0) / ms.length;
+}
+export function guestMult(g) {
+    let m = WEATHER[g.weather]?.mult ?? 1;
+    for (const e of g.effects) if (e.mult) m *= e.mult;
+    if (g.today?.crowd) m *= 1.35;
+    return m;
+}
+export function expectedGuests(g) {
+    const base = 6 + g.rep * .3;
+    return Math.max(3, Math.round(base * guestMult(g) * priceFactor(g)));
+}
+export function avgPrice(g) { return g.menu.reduce((s, m) => s + m.p, 0) / g.menu.length; }
+
+export function prepToday(g) {
+    if (g.today?.prepared) return g.today;
+    g.today = {
+        prepared: true,
+        crowd: chance(.18),
+        buy: 0,
+        lines: {},
+        events: [],
+        eventsReady: false,
+        aiError: null,
+    };
+    const need = Math.round(expectedGuests(g) * .9);
+    g.today.buy = clamp(Math.ceil((need - g.ing) / 5) * 5, 0, 40);
+    return g.today;
+}
+export const ingCost = n => n * ING_PRICE;
+
+// ---------- 사건 목록 ----------
+// eff: rep, money, ing, mood, fatigue, relBoss, clean, ok(능력 사건을 잘 해냈나), skill
+const K = (ko, en) => [ko, en];
+export const EVENT_KINDS = {
+    rude: {
+        cat: 'guest', label: K('진상 손님', 'Difficult customer'), important: true, tiers: ['mid', 'high'],
+        who: g => roleStaff(g, 'serve'),
+        choices: [
+            { label: K('정중히 사과하고 새로 만들어 주기', 'Apologize and remake it'), eff: { rep: 1, ing: -1, mood: -6, ok: true, skill: 'serve' } },
+            { label: K('그냥 환불해 주기', 'Just refund it'), eff: { money: -4000, mood: -2 } },
+            { label: K('직원에게 알아서 하라고 맡기기', 'Let the staff handle it'), eff: { rep: 2, mood: -3, relBoss: 2, ok: true, skill: 'serve', gamble: true } },
+        ],
+        fb: { s: K('손님이 크림이 적다며 목소리를 높여요.', 'A customer is loudly complaining there is too little cream.'), guest: K('"이거 사진이랑 다르잖아요?"', '"This looks nothing like the picture."'), staff: K('"…그게, 오늘 크림이 좀…"', '"Well… about the cream today…"') },
+    },
+    regular: {
+        cat: 'guest', label: K('단골 손님', 'Regular customer'), tiers: ['mid', 'high'], auto: true,
+        who: g => roleStaff(g, 'serve'),
+        choices: [
+            { label: K('작은 서비스 주기', 'Give a little treat'), eff: { rep: 2, ing: -1, ok: true, skill: 'serve' } },
+            { label: K('직원과 수다 떨게 두기', 'Let them chat a while'), eff: { rep: 1, mood: 6 } },
+            { label: K('평소처럼 대하기', 'Treat them as usual'), eff: { rep: 1 } },
+        ],
+        fb: { s: K('늘 오던 손님이 오늘도 들렀어요.', 'A familiar face drops by again.'), guest: K('"오늘도 그거 주세요~"', '"The usual, please~"'), staff: K('"아, 오셨어요!"', '"Oh, you\'re here!"') },
+    },
+    group: {
+        cat: 'guest', label: K('단체 주문', 'Group order'), big: true, tiers: ['high'],
+        who: g => roleStaff(g, 'bake'),
+        choices: [
+            { label: K('받는다', 'Accept it'), eff: { money: 42000, ing: -8, fatigue: 15, ok: true, skill: 'bake' } },
+            { label: K('웃돈 받고 받는다', 'Accept with a markup'), eff: { money: 56000, ing: -8, fatigue: 15, rep: -1 } },
+            { label: K('정중히 거절', 'Politely decline'), eff: { rep: -1 } },
+        ],
+        fb: { s: K('회사 행사용 디저트 스무 개 주문 전화가 왔어요.', 'An office calls to order twenty desserts for an event.'), guest: K('"오늘 저녁까지 될까요?"', '"Can you do it by tonight?"'), staff: K('"…스무 개요?"', '"…Twenty?"') },
+    },
+    reviewer: {
+        cat: 'guest', label: K('음식 리뷰어', 'Food reviewer'), big: true, important: true, tiers: ['high'],
+        who: g => roleStaff(g, 'bake'),
+        choices: [
+            { label: K('가장 자신 있는 메뉴를 정성껏', 'Serve your best, carefully'), eff: { rep: 6, ing: -2, ok: true, skill: 'bake', skillCheck: 6 } },
+            { label: K('평소대로 내기', 'Serve as usual'), eff: { rep: 3, skillCheck: 5, skill: 'bake' } },
+            { label: K('직원에게 맡기기', 'Leave it to the staff'), eff: { rep: 4, gamble: true, skill: 'bake' } },
+        ],
+        fb: { s: K('노트에 뭔가 적는 손님… 리뷰어 같아요.', 'A customer taking notes… looks like a reviewer.'), guest: K('"추천 메뉴가 뭔가요?"', '"What do you recommend?"'), staff: K('"(긴장)"', '"(nervous)"') },
+    },
+    allergy: {
+        cat: 'guest', label: K('알레르기 문의', 'Allergy question'), tiers: ['low', 'mid', 'high'],
+        who: g => roleStaff(g, 'serve'),
+        choices: [
+            { label: K('재료를 하나하나 확인해 주기', 'Check every ingredient'), eff: { rep: 2, fatigue: 4, ok: true, skill: 'serve' } },
+            { label: K('직원이 바로 대답하게 두기', 'Let the staff answer'), eff: { rep: 1, skillCheck: 5, skill: 'serve' } },
+            { label: K('견과류 없는 메뉴 추천', 'Recommend a nut-free item'), eff: { rep: 1 } },
+        ],
+        fb: { s: K('손님이 견과류가 들어갔는지 물어봐요.', 'A customer asks whether anything has nuts.'), guest: K('"땅콩 들어가요?"', '"Is there peanut in this?"'), staff: K('"음… 아마 없을걸요?"', '"Umm… probably not?"') },
+    },
+    shoplifter: {
+        cat: 'guest', label: K('좀도둑 손님', 'Shoplifter'), tiers: ['mid'],
+        who: g => roleStaff(g, 'serve'),
+        choices: [
+            { label: K('쫓아가서 붙잡기', 'Chase them'), eff: { rep: 1, fatigue: 6, skillCheck: 6, skill: 'serve', ok: true } },
+            { label: K('조용히 불러 세우기', 'Quietly stop them'), eff: { skillCheck: 4, skill: 'serve' } },
+            { label: K('못 본 척', 'Pretend not to see'), eff: { money: -3500 } },
+        ],
+        fb: { s: K('누가 쿠키를 주머니에 슬쩍 넣었어요.', 'Someone slipped a cookie into their pocket.'), guest: K('"(슬금슬금)"', '"(sneaking out)"'), staff: K('"어? 방금…"', '"Huh? Did they just…"') },
+    },
+    priceSpike: {
+        cat: 'shop', label: K('재료값 폭등', 'Ingredient price spike'), tiers: ['low', 'mid', 'high'],
+        who: g => roleStaff(g, 'bake'),
+        choices: [
+            { label: K('비싸도 산다', 'Buy anyway'), eff: { money: -8000 } },
+            { label: K('있는 재료로 버틴다', 'Make do with what we have'), eff: { ing: -3, rep: -1 } },
+            { label: K('메뉴를 바꿔 본다', 'Switch up the menu'), eff: { rep: 0, mood: -3, ok: true, skill: 'bake' } },
+        ],
+        fb: { s: K('버터값이 갑자기 두 배가 됐대요.', 'Butter prices suddenly doubled.'), guest: K('', ''), staff: K('"사장님, 버터가…"', '"Boss, the butter…"') },
+    },
+    spoil: {
+        cat: 'shop', label: K('냉장고 고장', 'Fridge broke'), tiers: ['low', 'mid', 'high'],
+        who: g => roleStaff(g, 'bake'),
+        choices: [
+            { label: K('바로 수리 부르기', 'Call a repair right away'), eff: { money: -15000, ing: -1 } },
+            { label: K('살릴 수 있는 것만 챙기기', 'Save what we can'), eff: { ing: -3, clean: -5 } },
+            { label: K('그냥 버리고 계속', 'Toss it and carry on'), eff: { ing: -5 } },
+        ],
+        fb: { s: K('냉장고에서 이상한 소리가 나요.', 'The fridge is making a strange noise.'), guest: K('', ''), staff: K('"크림이 미지근해요…"', '"The cream is lukewarm…"') },
+    },
+    inspection: {
+        cat: 'shop', label: K('위생 점검', 'Health inspection'), big: true, tiers: ['low', 'mid', 'high'], needLowClean: true,
+        who: g => roleStaff(g, 'floor') || roleStaff(g, 'serve'),
+        choices: [
+            { label: K('솔직히 사과하기', 'Apologize honestly'), eff: { money: -20000, rep: -3 } },
+            { label: K('지금 당장 다 같이 청소', 'Everyone cleans right now'), eff: { money: -10000, rep: -1, clean: 20, fatigue: 10 } },
+            { label: K('직원에게 설명하게 두기', 'Let the staff explain'), eff: { money: -15000, rep: -2, gamble: true } },
+        ],
+        fb: { s: K('위생 점검 나왔습니다. 바닥이…', 'Health inspector here. About this floor…'), guest: K('"여기 얼룩은 언제부터죠?"', '"How long has this stain been here?"'), staff: K('"그, 그게…"', '"W-well…"') },
+    },
+    sneak: {
+        cat: 'staff', label: K('몰래 케이크 먹기', 'Sneaking cake'), tiers: ['low', 'mid', 'high'], auto: true,
+        who: g => tagStaff(g, ['glutton', 'lazy']),
+        choices: [
+            { label: K('따끔하게 혼내기', 'Scold them'), eff: { mood: -10, relBoss: -5 } },
+            { label: K('못 본 척 넘어가기', 'Let it slide'), eff: { ing: -1, relBoss: 4 } },
+            { label: K('하나 같이 먹기', 'Have one together'), eff: { ing: -2, mood: 10, relBoss: 8 } },
+        ],
+        fb: { s: K('진열대 뒤에서 오물오물 소리가…', 'Munching sounds behind the display…'), guest: K('', ''), staff: K('"마, 맛만 보는 거예요!"', '"J-just a taste!"') },
+    },
+    fight: {
+        cat: 'staff', label: K('직원끼리 싸움', 'Staff quarrel'), important: true, tiers: ['low', 'mid', 'high'], auto: true, pair: 'bad',
+        choices: [
+            { label: K('둘 다 불러서 화해시키기', 'Get them to make up'), eff: { pairRel: 10, mood: -2 } },
+            { label: K('한쪽 편 들기', 'Take one side'), eff: { pairRel: -6, relBoss: 4, relBoss2: -8 } },
+            { label: K('모른 척', 'Stay out of it'), eff: { pairRel: -10, rep: -1 } },
+        ],
+        fb: { s: K('주방에서 언성이 높아졌어요.', 'Voices are rising in the kitchen.'), guest: K('', ''), staff: K('"그건 네가 잘못했잖아!"', '"That was your fault!"') },
+    },
+    friends: {
+        cat: 'staff', label: K('친한 사이 사건', 'Close friends'), important: true, tiers: ['low', 'mid', 'high'], auto: true, pair: 'good',
+        choices: [
+            { label: K('사이좋다고 칭찬하기', 'Praise their teamwork'), eff: { mood: 6, relBoss: 3 } },
+            { label: K('일할 땐 떨어져 있으라고 하기', 'Tell them to split up while working'), eff: { mood: -4, relBoss: -3, rep: 1 } },
+            { label: K('그냥 둔다', 'Leave them be'), eff: { gamble: true } },
+        ],
+        fb: { s: K('두 사람이 같이 붙어서 일하고 있어요.', 'The two are working side by side again.'), guest: K('', ''), staff: K('"이거 내가 할게~"', '"I\'ve got this one~"') },
+    },
+    late: {
+        cat: 'staff', label: K('지각', 'Late'), tiers: ['low', 'mid', 'high'], auto: true, early: true,
+        who: g => workingStaff(g).filter(s => (s.fatigue ?? 0) > 65 || hasTag(s.id, 'lazy')).map(s => s.id)[0],
+        choices: [
+            { label: K('괜찮다고 해 주기', 'Say it\'s fine'), eff: { relBoss: 5, mood: 5 } },
+            { label: K('한마디 하기', 'Have a word'), eff: { relBoss: -6, mood: -5 } },
+            { label: K('월급에서 깎기', 'Dock their pay'), eff: { money: 5000, relBoss: -14, mood: -10 } },
+        ],
+        fb: { s: K('문이 벌컥 열리고 숨을 헐떡이며 들어와요.', 'The door bursts open, someone gasping for air.'), guest: K('', ''), staff: K('"죄, 죄송해요! 버스가…"', '"S-sorry! The bus…"') },
+    },
+    franchise: {
+        cat: 'out', label: K('옆집 프랜차이즈 오픈', 'Chain store next door'), tiers: ['high'], big: true,
+        who: g => roleStaff(g, 'serve'),
+        effect: { mult: .8, days: 3 },
+        choices: [
+            { label: K('할인 행사로 맞서기', 'Fight back with a sale'), eff: { money: -10000, rep: 2 } },
+            { label: K('우리는 우리 길로', 'Stay our course'), eff: { rep: 0 } },
+            { label: K('직원 의견 들어 보기', 'Ask the staff'), eff: { gamble: true, mood: 4 } },
+        ],
+        fb: { s: K('길 건너에 큰 체인 카페가 문을 열었어요.', 'A big chain café just opened across the street.'), guest: K('', ''), staff: K('"저기 줄 엄청 길어요…"', '"Their line is huge…"') },
+    },
+    festival: {
+        cat: 'out', label: K('동네 축제', 'Town festival'), tiers: ['low', 'mid', 'high'],
+        who: g => roleStaff(g, 'serve'),
+        effect: { mult: 1.3, days: 0 },
+        choices: [
+            { label: K('시식 나눠 주기', 'Hand out samples'), eff: { ing: -3, rep: 3, fatigue: 6 } },
+            { label: K('가격 조금 올리기', 'Raise prices a little'), eff: { money: 12000, rep: -1 } },
+            { label: K('평소대로', 'Business as usual'), eff: { rep: 1 } },
+        ],
+        fb: { s: K('밖이 북적북적, 동네 축제래요!', 'It\'s bustling outside — a town festival!'), guest: K('"여기도 뭐 팔아요?"', '"Do you sell anything here?"'), staff: K('"오늘 바쁘겠다…"', '"It\'s gonna be busy…"') },
+    },
+};
+
+/** 원본 카드를 참고할 중요한 장면 */
+export const isImportantKind = kind => !!EVENT_KINDS[kind]?.important;
+
+function roleStaff(g, role) {
+    const w = workingStaff(g);
+    return (w.find(s => s.role === role) || w.find(s => s.role === 'all') || pick(w))?.id;
+}
+function tagStaff(g, tags) {
+    const w = workingStaff(g).filter(s => hasTag(s.id, ...tags));
+    return w.length ? pick(w).id : null;
+}
+function pairOf(g, kind) {
+    const w = workingStaff(g);
+    const pairs = [];
+    for (let i = 0; i < w.length; i++) for (let j = i + 1; j < w.length; j++) {
+        const v = rel(w[i].id, w[j].id).v;
+        if (kind === 'bad' ? v <= -30 : v >= 50) pairs.push([w[i].id, w[j].id]);
+    }
+    return pairs.length ? pick(pairs) : null;
+}
+
+/** 오늘 나올 사건 고르기 (수치 조건 + 성격 태그) */
+export function pickEvents(g, mode = 'direct', count = null) {
+    const tier = repTier(g.rep);
+    const w = workingStaff(g);
+    if (!w.length) return [];
+    const n = count ?? (mode === 'direct' ? (g.today?.crowd ? 4 : randi(3, 4)) : randi(1, 2));
+    const pool = [];
+    for (const [id, k] of Object.entries(EVENT_KINDS)) {
+        if (mode === 'auto' && !k.auto) continue;
+        if (mode === 'direct' && k.big === undefined && false) continue;
+        if (!k.tiers.includes(tier) && !(k.cat === 'staff')) continue;
+        if (k.needLowClean && g.clean >= 30) continue;
+        if (id === 'franchise' && g.effects.some(e => e.kind === 'franchise')) continue;
+        let staffIds = null;
+        if (k.pair) { const p = pairOf(g, k.pair); if (!p) continue; staffIds = p; }
+        else { const s = k.who?.(g); if (!s) continue; staffIds = [s]; }
+        let weight = 1;
+        if (k.cat === 'staff') weight = 1.3;
+        if (id === 'inspection') weight = 3;
+        if (id === 'festival' || id === 'franchise') weight = .35;
+        if (id === 'priceSpike' || id === 'spoil') weight = .5;
+        if (k.big) weight *= .8;
+        // 감싸줌 → 나중에 터짐
+        if (k.pair === 'bad' && g.pending.some(p => staffIds.includes(p.a))) weight *= 2;
+        pool.push({ kind: id, staffIds, weight });
+    }
+    const out = [];
+    const used = new Set();
+    while (out.length < n && pool.length) {
+        const total = pool.reduce((s, p) => s + p.weight, 0);
+        let r = Math.random() * total, i = 0;
+        for (; i < pool.length; i++) { r -= pool[i].weight; if (r <= 0) break; }
+        const p = pool.splice(Math.min(i, pool.length - 1), 1)[0];
+        if (used.has(p.kind)) continue;
+        used.add(p.kind);
+        out.push({ id: uid('ev'), kind: p.kind, staffIds: p.staffIds });
+    }
+    // 시간 나누기
+    const slots = shuffle([.14, .32, .5, .66, .82]).slice(0, out.length).sort();
+    out.forEach((e, i) => (e.at = EVENT_KINDS[e.kind].early ? .06 : slots[i]));
+    out.sort((a, b) => a.at - b.at);
+    return out;
+}
+
+/** AI가 못 쓸 때 쓰는 기본 사건 글 */
+export function fallbackEventText(ev) {
+    const k = EVENT_KINDS[ev.kind];
+    return {
+        title: L(...k.label),
+        situation: L(...k.fb.s),
+        guest: L(...k.fb.guest),
+        staff: L(...k.fb.staff),
+        choices: k.choices.map(c => ({ label: L(...c.label), line: '', interfere: false })),
+    };
+}
+
+// AI 효과값 범위
+const RANGE = { rep: [-12, 12], money: [-60000, 70000], ing: [-10, 3], mood: [-25, 25], fatigue: [-10, 25], relBoss: [-20, 20], clean: [-15, 25] };
+export function clampEff(eff = {}) {
+    const out = {};
+    for (const [k, [a, b]] of Object.entries(RANGE)) if (eff[k] !== undefined && Number.isFinite(+eff[k])) out[k] = clamp(Math.round(+eff[k]), a, b);
+    return out;
+}
+
+/** 사장님 선택 → 결과 적용. 반환: {line, interfere, delta, ok} */
+export function resolveEvent(g, ev, ci, biz) {
+    const k = EVENT_KINDS[ev.kind];
+    const base = k.choices[ci]?.eff || {};
+    const ai = ev.text?.choices?.[ci] || {};
+    const main = staffById(ev.staffIds[0]);
+    let eff = { ...base };
+    // AI가 성격이 끼어들었다고 하면 그 범위 안에서 조정
+    if (ai.effects) Object.assign(eff, clampEff({ ...pickNums(base), ...ai.effects }));
+    let ok = !!base.ok;
+    if (base.skillCheck && main) {
+        const lv = main[base.skill || 'serve'];
+        const pass = lv + randi(-2, 2) >= base.skillCheck;
+        ok = pass;
+        if (!pass) { eff.rep = (eff.rep || 0) - (ev.kind === 'reviewer' ? 9 : 3); if (ev.kind === 'shoplifter') eff.money = (eff.money || 0) - 3500; if (ev.kind === 'allergy') eff.rep -= 3; }
+        else if (ev.kind === 'reviewer') eff.rep = (eff.rep || 0) + 3;
+    }
+    if (base.gamble && main) {
+        const good = chance(.35 + bossRel(main.id) / 300 + (main.serve + main.bake) / 40);
+        eff.rep = (eff.rep || 0) + (good ? 2 : -2);
+        ok = good;
+    }
+    // 단체 주문: 재료가 모자라면 반만
+    if (ev.kind === 'group' && eff.ing && g.ing + eff.ing < 0) {
+        eff.money = Math.round((eff.money || 0) * Math.max(0, g.ing) / -eff.ing);
+        eff.rep = (eff.rep || 0) - 2;
+        eff.ing = -g.ing;
+    }
+    const delta = applyEff(g, eff, ev, biz);
+    if (ok && main && base.skill) {
+        biz && (biz.exp[main.id] = (biz.exp[main.id] || 0));
+        addExp(main, base.skill, 3);
+        if (biz) (biz.expLog ??= []).push({ id: main.id, skill: base.skill, n: 3 });
+    }
+    if (k.effect) {
+        if (k.effect.days) g.effects.push({ kind: ev.kind, mult: k.effect.mult, until: g.day + k.effect.days });
+        else if (biz) biz.mult *= k.effect.mult;
+    }
+    const line = ai.line || '';
+    ev.done = { ci, line, interfere: !!ai.interfere, delta, ok };
+    for (const id of ev.staffIds) remember(id, `${ev.text?.title || L(...k.label)} — ${ev.text?.choices?.[ci]?.label || L(...k.choices[ci].label)}`);
+    if (biz) biz.log.push({ kind: ev.kind, staffIds: ev.staffIds, title: ev.text?.title || L(...k.label), choice: ev.text?.choices?.[ci]?.label || L(...k.choices[ci].label), line, delta });
+    // 감싸주기 → 며칠 뒤 터짐
+    if (ev.kind === 'friends' && ci === 2 && !ok && ev.staffIds.length === 2) {
+        g.pending.push({ a: ev.staffIds[0], b: ev.staffIds[1], day: g.day });
+        addRel(ev.staffIds[0], ev.staffIds[1], 0, L('실수를 감싸 줬는데 아직 들키지 않음', 'Covered up a mistake — not found out yet'));
+    }
+    return { line, interfere: !!ai.interfere, delta, ok };
+}
+const pickNums = o => Object.fromEntries(Object.entries(o).filter(([, v]) => typeof v === 'number'));
+
+export function applyEff(g, eff, ev, biz) {
+    const d = {};
+    const main = ev ? staffById(ev.staffIds[0]) : null;
+    const add = (k, v) => { if (v) d[k] = (d[k] || 0) + v; };
+    if (eff.rep) { g.rep = clamp(g.rep + eff.rep, 0, 100); add('rep', eff.rep); }
+    if (eff.money) { g.money += eff.money; add('money', eff.money); if (biz) biz.eventMoney += eff.money; }
+    if (eff.ing) { const before = g.ing; g.ing = Math.max(0, g.ing + eff.ing); add('ing', g.ing - before); }
+    if (eff.clean) { g.clean = clamp(g.clean + eff.clean, 0, 100); add('clean', eff.clean); }
+    if (main) {
+        if (eff.mood) { main.mood = clamp((main.mood ?? 60) + eff.mood, 0, 100); add('mood', eff.mood); }
+        if (eff.fatigue) { for (const s of (ev.kind === 'group' || ev.kind === 'inspection' ? workingStaff(g) : [main])) s.fatigue = clamp((s.fatigue ?? 30) + eff.fatigue, 0, 100); add('fatigue', eff.fatigue); }
+        if (eff.relBoss) { addRel('boss', main.id, eff.relBoss); add('relBoss', eff.relBoss); }
+    }
+    if (ev?.staffIds?.length === 2) {
+        if (eff.pairRel) { addRel(ev.staffIds[0], ev.staffIds[1], eff.pairRel); add('pairRel', eff.pairRel); }
+        if (eff.relBoss2) addRel('boss', ev.staffIds[1], eff.relBoss2);
+    }
+    return d;
+}
+
+export function deltaText(d) {
+    const parts = [];
+    const sg = v => (v > 0 ? '+' : '−') + Math.abs(v);
+    if (d.rep) parts.push(L('평판 ', 'Rep ') + sg(d.rep));
+    if (d.money) parts.push(L('돈 ', '₩ ') + sg(d.money).replace(/(\d)(?=(\d{3})+$)/g, '$1,'));
+    if (d.ing) parts.push(L('재료 ', 'Stock ') + sg(d.ing));
+    if (d.clean) parts.push(L('청결 ', 'Clean ') + sg(d.clean));
+    if (d.mood) parts.push(L('기분 ', 'Mood ') + (d.mood > 0 ? '↑' : '↓'));
+    if (d.relBoss) parts.push(L('사장 친밀도 ', 'Bond ') + (d.relBoss > 0 ? '↑' : '↓'));
+    if (d.pairRel) parts.push(L('둘 사이 ', 'Their bond ') + (d.pairRel > 0 ? '↑' : '↓'));
+    return parts.join(' · ');
+}
+
+// ---------- 영업 기록 ----------
+export function newBiz(g) {
+    return {
+        money0: g.money, rep0: g.rep, clean0: g.clean, ing0: g.ing,
+        served: 0, revenue: 0, soldout: 0, left: 0, burnt: 0, eaten: 0, baked: 0, eventMoney: 0,
+        mult: 1, exp: {}, expLog: [], log: [], helpedOnce: false, t: 0, finished: false,
+        sold: {},
+    };
+}
+export function sellOne(g, biz) {
+    const m = pick(g.menu);
+    biz.served++; biz.revenue += m.p; g.money += m.p;
+    biz.sold[m.id] = (biz.sold[m.id] || 0) + 1;
+    const pf = menuInfo(m.id).base / m.p;
+    g.rep = clamp(g.rep + (pf >= .95 ? .35 : .15), 0, 100);
+    return m;
+}
+
+// ---------- 마감 ----------
+export function closeDay(g, biz) {
+    const w = workingStaff(g);
+    const wages = Math.round(g.staff.length * WAGE * g.wageRate);
+    g.money -= wages;
+    let interest = 0;
+    if (g.loan > 0) { interest = Math.round(g.loan * .05); g.money -= interest; }
+    // 진열대 남은 것·재료 상함
+    const spoiled = Math.floor(g.ing * .4);
+    g.ing -= spoiled;
+    // 직원 상태
+    const busy = biz.served / Math.max(1, w.length);
+    for (const s of w) {
+        s.fatigue = clamp((s.fatigue ?? 30) + 12 + busy * .9, 0, 100);
+        s.mood = clamp((s.mood ?? 60) + (s.fatigue > 75 ? -8 : 2) + (biz.revenue > 60000 ? 3 : 0), 0, 100);
+        const skill = s.role === 'bake' ? 'bake' : s.role === 'serve' ? 'serve' : (s.bake > s.serve ? 'bake' : 'serve');
+        addExp(s, skill, 1);
+        biz.expLog.push({ id: s.id, skill, n: 1 });
+    }
+    // 같이 일한 사이: 기분 나쁘면 조금 멀어짐, 좋으면 조금 가까워짐
+    for (let i = 0; i < w.length; i++) for (let j = i + 1; j < w.length; j++) {
+        const m = ((w[i].mood ?? 60) + (w[j].mood ?? 60)) / 2;
+        addRel(w[i].id, w[j].id, m < 40 ? -3 : m > 70 ? 2 : 0);
+    }
+    // 빚
+    let ended = false;
+    if (g.money < 0) { g.debtDays += 1; if (g.debtDays >= 3) ended = true; }
+    else g.debtDays = 0;
+    // 밤도둑: 마지막에 나가는 직원
+    const last = w.length ? (w.find(s => hasTag(s.id, 'clumsy', 'lazy')) || pick(w)) : null;
+    if (last && hasTag(last.id, 'clumsy', 'lazy') && chance(.22)) {
+        g.notices.push({ kind: 'thief', staffId: last.id, money: Math.min(15000, Math.max(0, Math.round(g.money * .15))), ing: Math.min(3, g.ing) });
+    }
+    // 기록
+    const net = g.money - biz.money0 - (g.today?.spentIng || 0);
+    g.stats.directDays += 1;
+    g.stats.maxRep = Math.max(g.stats.maxRep, Math.round(g.rep));
+    if (!g.stats.bestDay || biz.revenue > g.stats.bestDay.revenue) g.stats.bestDay = { day: g.day, revenue: biz.revenue, served: biz.served, weather: g.weather };
+    const summary = { wages, interest, spoiled, net, served: biz.served, revenue: biz.revenue };
+    biz.summary = summary;
+    addJournal({
+        day: g.day, mode: 'direct', weather: g.weather,
+        events: biz.log.map(l => ({ staffId: l.staffIds[0], title: l.title, text: l.line || l.choice })),
+        delta: { money: net, rep: Math.round(g.rep - biz.rep0), exp: biz.expLog.reduce((s, e) => s + e.n, 0) },
+        diaries: {},
+    });
+    for (const l of biz.log) if (l.delta?.rep >= 5 || l.delta?.rep <= -5 || ['reviewer', 'group', 'fight', 'inspection'].includes(l.kind)) g.stats.memorable.push({ day: g.day, title: l.title, text: l.line || l.choice });
+    if (g.stats.memorable.length > 30) g.stats.memorable.splice(0, g.stats.memorable.length - 30);
+    makeInbox(g);
+    g.phase = 'close';
+    g.today.closed = { ended, summary, discarded: biz.shelfLeft || 0 };
+    save();
+    return { ended, summary };
+}
+
+// ---------- 내일 걱정 ----------
+export function worries(g) {
+    const out = [];
+    if (g.ing < 6) out.push({ col: '#F7B6C6', t: L(`재료 ${g.ing}개 남음 → 아침에 꼭 사야 해요`, `Only ${g.ing} stock left → buy more in the morning`) });
+    if (g.clean < 35) out.push({ col: '#E8B97A', t: L('가게가 지저분해요 → 위생 점검이 올 수도', 'The shop is messy → an inspection may come') });
+    if (g.money < 0) out.push({ col: '#F28CA6', t: L(`빚 ${g.debtDays}일째 → 3일 쌓이면 폐업`, `In debt, day ${g.debtDays} → 3 days means closing down`) });
+    for (const s of g.staff) if ((s.fatigue ?? 0) >= 75) out.push({ col: '#F8CDBB', t: L(`${book(s.id)?.name} 피로가 높아요 → 내일 결근할 수도`, `${book(s.id)?.name} is exhausted → may skip tomorrow`) });
+    for (const s of g.staff) if (bossRel(s.id) <= -40) out.push({ col: '#D7C4E8', t: L(`${book(s.id)?.name}가 사장님께 불만이 많아요`, `${book(s.id)?.name} is unhappy with you`) });
+    return out.slice(0, 4);
+}
+
+// ---------- 결재함 ----------
+export function makeInbox(g) {
+    const add = it => { if (g.inbox.length < MAX_INBOX && !g.inbox.some(x => x.kind === it.kind && x.staffId === it.staffId)) g.inbox.push({ id: uid('ib'), day: g.day, ...it }); };
+    if (g.money < 0 && !g.loan) add({ kind: 'loan' });
+    if (g.loan > 0 && g.money >= g.loan + 20000) add({ kind: 'repay' });
+    if (g.money < 0 && g.wageRate === 1 && g.staff.length) add({ kind: 'wagecut' });
+    for (const s of g.staff) {
+        if (bossRel(s.id) <= -60 && (s.mood ?? 60) < 35) add({ kind: 'quit', staffId: s.id });
+        else if (bossRel(s.id) <= -30 && chance(.35)) add({ kind: 'complaint', staffId: s.id });
+    }
+    const idea = g.staff.find(s => s.bake >= 7 && chance(.3));
+    const unowned = MENU_POOL.filter(m => !g.menu.some(x => x.id === m.id));
+    if (idea && unowned.length && g.menu.length < 4) add({ kind: 'menu', staffId: idea.id, menuId: pick(unowned).id });
+}
+
+export function inboxInfo(it) {
+    const nm = it.staffId ? book(it.staffId)?.name : '';
+    switch (it.kind) {
+        case 'loan': return { tag: 'money', title: L('급전 대출', 'Emergency loan'), desc: L('50,000원을 빌려요. 다 갚을 때까지 매일 이자 5%가 나가요.', 'Borrow ₩50,000. 5% interest every day until repaid.'), a: L('빌린다', 'Borrow'), b: L('안 빌린다', 'No thanks') };
+        case 'repay': return { tag: 'money', title: L('대출 갚기', 'Repay the loan'), desc: L(`빌린 돈 ${g_loan()}을 한 번에 갚아요.`, `Pay back the ${g_loan()} loan in full.`), a: L('갚는다', 'Repay'), b: L('나중에', 'Later') };
+        case 'wagecut': return { tag: 'money', title: L('월급 깎기', 'Cut wages'), desc: L('모두의 월급을 30% 줄여요. 직원들 마음이 크게 멀어져요.', 'Cut everyone\'s pay by 30%. Staff will resent it.'), a: L('깎는다', 'Cut'), b: L('그대로', 'Keep as is') };
+        case 'quit': return { tag: 'complaint', title: L(`${nm}: 그만두겠대요`, `${nm} wants to quit`), desc: L('붙잡으려면 보너스 20,000원이 들어요.', 'Keeping them costs a ₩20,000 bonus.'), a: L('보너스 주고 붙잡기', 'Pay bonus, keep them'), b: L('보내 주기', 'Let them go') };
+        case 'complaint': return { tag: 'complaint', title: L(`${nm}의 불만`, `${nm}'s complaint`), desc: L('하루 쉬게 해 주면 기분이 나아질 거예요.', 'A day off would lift their mood.'), a: L('내일 쉬게 해 주기', 'Give them tomorrow off'), b: L('무시하기', 'Ignore it') };
+        case 'menu': { const m = menuInfo(it.menuId); return { tag: 'idea', title: L(`신메뉴 제안: ${m.n[0]}`, `New menu idea: ${m.n[1]}`), desc: L(`개발비 15,000원. 메뉴에 ${m.n[0]}이 늘어요.`, `₩15,000 to develop. Adds ${m.n[1]} to the menu.`), a: L('해 보자', 'Let\'s try it'), b: L('다음에', 'Not now') }; }
+        default: return { tag: 'idea', title: it.kind, desc: '', a: 'OK', b: L('아니요', 'No') };
+    }
+}
+const g_loan = () => (G()?.loan || 0).toLocaleString();
+
+export function decideInbox(id, yes) {
+    const g = G();
+    const it = g.inbox.find(x => x.id === id); if (!it) return null;
+    let note = '';
+    const s = it.staffId ? staffById(it.staffId) : null;
+    switch (it.kind) {
+        case 'loan': if (yes) { g.loan += 50000; g.money += 50000; note = L('5만 원을 빌렸어요', 'Borrowed ₩50,000'); } break;
+        case 'repay': if (yes) { g.money -= g.loan; note = L('대출을 다 갚았어요', 'Loan repaid'); g.loan = 0; } break;
+        case 'wagecut': if (yes) { g.wageRate = .7; for (const x of g.staff) addRel('boss', x.id, -25, L('월급이 깎임', 'Had their pay cut')); note = L('월급을 깎았어요', 'Wages cut'); } break;
+        case 'quit':
+            if (!s) break;
+            if (yes) { g.money -= 20000; addRel('boss', s.id, 20, L('그만두려다 붙잡힘', 'Was talked out of quitting')); s.mood = 60; note = L('붙잡았어요', 'They stayed'); }
+            else { fireStaff(s.id, true); note = L('떠났어요', 'They left'); }
+            break;
+        case 'complaint':
+            if (!s) break;
+            if (yes) { s.restNext = true; addRel('boss', s.id, 8); note = L('내일 쉬게 했어요', 'Day off tomorrow'); }
+            else { addRel('boss', s.id, -8, L('불만을 무시당함', 'Complaint was ignored')); }
+            break;
+        case 'menu':
+            if (yes) { g.money -= 15000; g.menu.push({ id: it.menuId, p: menuInfo(it.menuId).base }); if (s) { addRel('boss', s.id, 6); remember(s.id, L('신메뉴가 채택됨', 'Menu idea accepted')); } note = L('메뉴가 늘었어요', 'Menu added'); }
+            else if (s) addRel('boss', s.id, -3);
+            break;
+    }
+    g.inbox = g.inbox.filter(x => x !== it);
+    g.inboxHistory.unshift({ day: g.day, kind: it.kind, staffId: it.staffId, title: inboxInfo(it).title, yes });
+    if (g.inboxHistory.length > 40) g.inboxHistory.length = 40;
+    save();
+    return note;
+}
+
+export function fireStaff(id, quit = false) {
+    const g = G();
+    const s = staffById(id); if (!s) return;
+    g.staff = g.staff.filter(x => x !== s);
+    g.inbox = g.inbox.filter(x => x.staffId !== id);
+    remember(id, quit ? L('가게를 그만둠', 'Quit the shop') : L('해고됨', 'Was let go'));
+    (g.leftStaff ??= []).push({ id, day: g.day, quit });
+    assignRoles(g);
+    save();
+}
+
+// ---------- 자동 운영 (사장님 없음) ----------
+export function autoDay(g) {
+    g.day += 1;
+    g.weather = rollWeather();
+    g.effects = g.effects.filter(e => e.until >= g.day);
+    const w = g.staff.filter(s => !s.restNext);
+    g.staff.forEach(s => { s.restNext = false; });
+    const guests = Math.round(expectedGuests(g) * .55);
+    const sell = Math.min(guests, g.ing + 6);
+    const avg = avgPrice(g);
+    // 작게: 벌이·손해 작게
+    const revenue = g.staff.length ? Math.round(sell * avg * .5) : 0;
+    const cost = Math.round(g.staff.length * WAGE * g.wageRate * .4);
+    const before = g.money;
+    // 자리 비웠을 때 망하는 건 막기: 0 밑으로 안 내려가고, 이미 빚이 있으면 더 늘지 않음
+    g.money = before < 0 ? before + Math.max(0, revenue - cost) : Math.max(0, before + revenue - cost);
+    g.ing = Math.max(0, g.ing - Math.min(g.ing, Math.round(sell * .4)));
+    g.rep = clamp(g.rep + (sell >= guests ? .6 : -.6), 0, 100);
+    g.clean = clamp(g.clean - 4 + w.filter(s => hasTag(s.id, 'neat', 'diligent')).length * 3, 0, 100);
+    for (const s of g.staff) {
+        addExp(s, s.bake >= s.serve ? 'bake' : 'serve', 1);
+        s.fatigue = clamp((s.fatigue ?? 30) * .7 + 10, 0, 100);
+        s.mood = clamp((s.mood ?? 60) + (60 - (s.mood ?? 60)) * .3, 0, 100);
+    }
+    const picks = pickEvents(g, 'auto');
+    // 밤도둑 (피해 작게)
+    const careless = g.staff.find(s => hasTag(s.id, 'clumsy', 'lazy'));
+    if (careless && chance(.1)) picks.push({ id: uid('ev'), kind: 'nightThief', staffIds: [careless.id] });
+    for (const p of picks) {
+        if (p.kind === 'nightThief') { const loss = Math.min(5000, Math.max(0, g.money)); g.money -= loss; p.delta = { money: -loss }; continue; }
+        const k = EVENT_KINDS[p.kind];
+        const ci = randi(0, k.choices.length - 1);
+        const eff = Object.fromEntries(Object.entries(k.choices[ci].eff).filter(([, v]) => typeof v === 'number').map(([a, v]) => [a, Math.round(v * .4)]));
+        if (eff.money) eff.money = Math.max(eff.money, -Math.min(3000, Math.max(0, g.money)));
+        p.delta = applyEff(g, eff, p, null);
+        if (p.kind === 'sneak') g.ing = Math.max(0, g.ing - 1);
+    }
+    g.stats.autoDays += 1;
+    return { day: g.day, weather: g.weather, money: g.money - before, rep: 0, picks };
+}
+
+/** 자동 운영 일지 저장 (AI 글이 오면 채움) */
+export function storeAway(days, texts) {
+    const g = G();
+    const dayList = days.map(d => d.day);
+    let events = (texts?.length ? texts : days.flatMap(d => d.picks.map(p => ({ day: d.day, staffId: p.staffIds?.[0], title: kindTitle(p.kind), text: '' })))).slice(0, 5);
+    // AI가 날짜를 엉뚱하게 적었으면 순서대로 나눠 붙임
+    events = events.map((e, i) => (dayList.includes(e.day) ? e : { ...e, day: dayList[Math.min(dayList.length - 1, Math.floor(i * dayList.length / events.length))] }));
+    g.away = { days: days.map(d => d.day), events, seen: false, at: Date.now() };
+    for (const d of days) {
+        addJournal({ day: d.day, mode: 'auto', weather: d.weather, events: events.filter(e => e.day === d.day), delta: { money: d.money, rep: 0, exp: g.staff.length } });
+    }
+    for (const e of events) if (e.staffId) remember(e.staffId, e.title + (e.text ? ' — ' + e.text : ''));
+    save();
+}
+export function kindTitle(kind) {
+    if (kind === 'nightThief') return L('밤도둑', 'Night burglar');
+    return EVENT_KINDS[kind] ? L(...EVENT_KINDS[kind].label) : kind;
+}
+
+/** 아침 알림(밤도둑) 적용 */
+export function applyNotices(g) {
+    const out = [];
+    for (const n of g.notices) {
+        if (n.kind === 'thief') {
+            g.money -= n.money; g.ing = Math.max(0, g.ing - n.ing);
+            out.push({ ...n, text: L(`밤사이 도둑이 들었어요! 돈 ${n.money.toLocaleString()}원, 재료 ${n.ing}개를 잃었어요. (${book(n.staffId)?.name}가 문단속을 깜빡했대요)`, `A burglar broke in overnight! Lost ₩${n.money.toLocaleString()} and ${n.ing} stock. (${book(n.staffId)?.name} forgot to lock up)`) });
+            remember(n.staffId, L('문단속을 깜빡해서 도둑이 듦', 'Forgot to lock up — burglary'));
+            addRel('boss', n.staffId, -3);
+        }
+    }
+    g.notices = [];
+    return out;
+}
+
+/** 관계 덕분에 막는 실수 (하루 1번) */
+export function friendSaves(g, biz, staffId) {
+    if (biz.helpedOnce) return null;
+    const friend = workingStaff(g).find(s => s.id !== staffId && rel(s.id, staffId).v >= 50);
+    if (!friend || !chance(.6)) return null;
+    biz.helpedOnce = true;
+    return friend.id;
+}
+
+export function staffSummary(id) {
+    const s = staffById(id), b = book(id);
+    return { s, b, name: b?.name || '?' };
+}

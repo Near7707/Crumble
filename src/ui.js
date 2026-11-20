@@ -1,0 +1,510 @@
+// 떠 있는 창 · 머리 부분 · 탭 4개 (가게 / 직원 / 결재함 / 일지)
+import { esc, assetUrl, avatarUrl, ctx, clamp, dayKey } from './util.js';
+import { L, F, money, signedMoney, isKo } from './i18n.js';
+import {
+    S, G, save, ensureGame, book, staffById, colorOf, hearts, bossRel, rel, nextColor,
+    MAX_STAFF, MAX_INBOX, menuInfo, ING_PRICE, skillNeed, newGame,
+} from './state.js';
+import {
+    catchUp, storeAway, tagLabel, weatherLabel, roleLabel, workingStaff, inboxInfo, decideInbox,
+    fireStaff, assignRoles, nextDayNow, kindTitle, hasTag,
+} from './rules.js';
+import { faceChip, faceStyle, ICON } from './looks.js';
+import { createScene } from './scene.js';
+import { awayJournal, makeManual } from './ai.js';
+import { line, tapLine } from './lines.js';
+import { renderBusiness, resumeIfNeeded, businessActive, pauseBusiness } from './screens.js';
+import { renderEnding } from './ending.js';
+
+export const view = { tab: 'shop', staffIdx: 0, staffSub: 'stats', journal: 'this', open: false };
+let root = null, scenes = [], shopTimer = null, awayBusy = false;
+
+export function addScene(s) { scenes.push(s); return s; }
+function killScenes() { scenes.forEach(s => s.destroy()); scenes = []; clearInterval(shopTimer); shopTimer = null; }
+
+// ---------- 창 ----------
+export function mount() {
+    if (root) return root;
+    root = document.createElement('div');
+    root.id = 'crumble-root';
+    root.innerHTML = `<div class="cr-win" role="dialog" aria-label="Crumble"><div class="cr-inner"></div><div class="cr-dim"></div><div class="cr-sheet" role="dialog"></div><div class="cr-modal" role="dialog"></div><div class="cr-toast" role="status" aria-live="polite"></div></div>`;
+    document.body.appendChild(root);
+    root.addEventListener('click', onClick);
+    root.querySelector('.cr-dim').addEventListener('click', () => { if (!root.querySelector('.cr-sheet').classList.contains('lock')) closeSheet(); closeModal(); });
+    // 실리태번 쪽 단축키·스와이프가 창 안에서 안 걸리게
+    ['keydown', 'touchstart', 'touchmove', 'wheel'].forEach(t => root.addEventListener(t, e => e.stopPropagation(), { passive: true }));
+    return root;
+}
+export const inner = () => root.querySelector('.cr-inner');
+
+export async function openWindow() {
+    mount();
+    ensureGame();
+    root.classList.add('open');
+    view.open = true;
+    if (businessActive()) return; // 멈춰 둔 영업 화면 그대로
+    const days = catchUp();
+    render();
+    if (days) runAway(days);
+    resumeIfNeeded();
+}
+export function closeWindow() {
+    if (!root) return;
+    root.classList.remove('open');
+    view.open = false;
+    if (businessActive()) { pauseBusiness(true); return; } // 장면은 그대로 두고 멈춤
+    killScenes();
+}
+
+async function runAway(days) {
+    if (awayBusy) return;
+    awayBusy = true;
+    G().away = { days: days.map(d => d.day), events: [], loading: true, seen: false };
+    render();
+    let texts = null;
+    try { texts = await awayJournal(days); } catch (e) { console.warn(e); }
+    storeAway(days, texts);
+    awayBusy = false;
+    if (view.open && !businessActive()) render();
+}
+
+// ---------- 그리기 ----------
+export function render() {
+    if (!root) return;
+    killScenes();
+    closeSheet(); closeModal();
+    const g = ensureGame();
+    const box = inner();
+    if (g.phase === 'ending') { renderEnding(box); return; }
+    if (['morning', 'open', 'close'].includes(g.phase)) { renderBusiness(box); return; }
+    box.innerHTML = headHtml() + tabsHtml() + `<main class="cr-main">${tabBody()}</main>`;
+    afterTab();
+}
+
+export function logoHtml() {
+    return `<img class="cr-logo" src="${assetUrl('assets/crumble_logo@2x.png')}" alt="Crumble" draggable="false">`;
+}
+export function closeBtn() {
+    return `<button class="cr-x" type="button" data-act="close" aria-label="${L('창 닫기', 'Close')}"><svg width="16" height="16" viewBox="0 0 20 20" aria-hidden="true"><path d="M5 5l10 10M15 5L5 15" stroke="#8A5A36" stroke-width="2.4" stroke-linecap="round"/></svg></button>`;
+}
+
+function statusText(g) {
+    if (g.away?.loading) return L('사장님 없음 · 일지 쓰는 중', 'Boss away · writing log');
+    if (g.phase === 'ready') return workingStaff(g).length ? L('오늘도 영업 가능!', 'Ready to open!') : L('직원이 필요해요', 'Need staff');
+    if (g.phase === 'done') return L('오늘 영업 끝', 'Closed for today');
+    return '';
+}
+function headHtml() {
+    const g = G();
+    return `<header class="cr-top"><div class="cr-row">${logoHtml()}<span class="cr-money${g.money < 0 ? ' neg' : ''}">💰 ${money(g.money)}</span>${closeBtn()}</div>
+<div class="cr-row cr-status"><span class="cr-pill day">${F(L('{n}일째', 'Day {n}'), { n: g.day })}</span><span class="cr-pill wx">${weatherLabel(g.weather)}</span><span class="cr-pill st"><i></i>${statusText(g)}</span>${g.money < 0 ? `<span class="cr-pill debt">${F(L('빚 {n}/3일', 'Debt {n}/3'), { n: g.debtDays })}</span>` : ''}</div></header><div class="cr-drip"></div>`;
+}
+function tabsHtml() {
+    const g = G();
+    const t = (id, ico, ko, en, badge) => `<button type="button" class="cr-tab${view.tab === id ? ' on' : ''}" data-tab="${id}">${ico} ${L(ko, en)}${badge ? `<b class="cr-badge">${badge}</b>` : ''}</button>`;
+    return `<nav class="cr-tabs">${t('shop', '🏪', '가게', 'Shop')}${t('staff', '👩‍🍳', '직원', 'Staff')}${t('inbox', '📋', '결재함', 'Inbox', g.inbox.length || '')}${t('journal', '📖', '일지', 'Log')}</nav>`;
+}
+function tabBody() {
+    switch (view.tab) {
+        case 'staff': return staffTab();
+        case 'inbox': return inboxTab();
+        case 'journal': return journalTab();
+        default: return shopTab();
+    }
+}
+function afterTab() {
+    if (view.tab === 'shop') mountShopScene();
+}
+
+// ---------- 공통 조각 ----------
+const heartRow = v => `<span class="cr-hearts" aria-label="${L('사장 친밀도', 'Bond')} ${v}">${[0, 1, 2, 3, 4].map(i => `<i class="${i < hearts(v) ? 'on' : ''}">♥</i>`).join('')}</span>`;
+const bar = (v, col) => `<span class="cr-bar"><i style="width:${clamp(v, 0, 100)}%;background:${col}"></i></span>`;
+const nameTag = id => { const s = staffById(id); return `<span class="cr-ntag" style="background:${colorOf(s).tag}">${esc(book(id)?.name || '?')}</span>`; };
+export { heartRow, bar, nameTag };
+
+function doingLabel(s) {
+    if (s.absent) return L('결근', 'Off today');
+    if ((s.fatigue ?? 0) >= 75) return L('꾸벅꾸벅', 'Dozing');
+    const g = G();
+    if (g.phase === 'done') return L('퇴근', 'Gone home');
+    return { bake: L('오븐 앞', 'At the oven'), serve: L('계산대', 'At the counter'), floor: L('홀 정리', 'Tidying up'), all: L('이것저것', 'Everything') }[s.role] || '';
+}
+
+// ---------- 🏪 가게 탭 ----------
+function shopTab() {
+    const g = G();
+    const w = g.staff;
+    let h = `<div class="cr-sceneHost" id="cr-shopScene"></div>`;
+    // 사장님 없을 때 일지
+    if (g.away && (g.away.events?.length || g.away.loading)) {
+        const n = g.away.events?.length || 0;
+        h += `<section class="cr-card"><div class="cr-ttl">🌙 ${L('사장님 없을 때', 'While you were away')}${!g.away.seen && n ? `<span class="cr-new">${F(L('새 일 {n}건', '{n} new'), { n })}</span>` : ''}</div>`;
+        if (g.away.loading) h += `<div class="cr-muted cr-loading">${L('직원들이 그동안 있었던 일을 정리하는 중…', 'The staff are writing up what happened…')}</div>`;
+        else h += g.away.events.map(e => `<div class="cr-log">${e.staffId && staffById(e.staffId) ? faceChip(e.staffId, 28) : '<span class="cr-face blank"></span>'}<div><div class="cr-logT">${e.staffId ? nameTag(e.staffId) : ''}${e.time ? `<span class="cr-muted">${esc(e.time)}</span>` : ''} <b>${esc(e.title)}</b></div>${e.text ? `<p>${esc(e.text)}</p>` : ''}</div></div>`).join('');
+        h += `<button class="cr-link" type="button" data-act="toJournal">${L('전체 기록 보기 ›', 'See full log ›')}</button></section>`;
+        g.away.seen = true;
+    }
+    // 수치 2×2
+    const last = g.journal[0];
+    h += `<section class="cr-grid2">
+<div class="cr-stat"><div class="cr-statT">💰 ${L('돈', 'Money')}</div><b class="${g.money < 0 ? 'neg' : ''}">${money(g.money)}</b><small>${last ? F(L('어제 {d}', 'Yesterday {d}'), { d: signedMoney(last.delta?.money || 0) }) : L('첫날이에요', 'First day')}</small></div>
+<div class="cr-stat"><div class="cr-statT">⭐ ${L('평판', 'Reputation')} <b>${Math.round(g.rep)}</b></div>${bar(g.rep, '#F29A7C')}<small>${g.rep < 35 ? L('손님이 뜸해요', 'Few customers') : g.rep < 65 ? L('동네에서 알아봐요', 'Known locally') : L('줄 서는 가게!', 'People line up!')}</small></div>
+<div class="cr-stat"><div class="cr-statT">🍰 ${L('재료', 'Stock')} <b>${g.ing}</b></div>${bar(g.ing * 3, '#FBE29A')}<small>${g.ing < 6 ? L('곧 바닥나요', 'Running low') : L('디저트는 남으면 상해요', 'Desserts spoil if left')}</small></div>
+<div class="cr-stat"><div class="cr-statT">🧼 ${L('청결', 'Clean')} <b>${Math.round(g.clean)}</b></div>${bar(g.clean, '#BFD9E8')}<small>${g.clean < 35 ? L('위생 점검이 걱정돼요', 'Inspection risk') : L('바닥 반짝반짝', 'Floors are shiny')}</small></div></section>`;
+    // 오늘 출근한 직원 (한 줄씩)
+    h += `<section class="cr-card"><div class="cr-ttl">👩‍🍳 ${L('오늘 출근한 직원', 'Staff today')}<small>${g.staff.length}/${MAX_STAFF}</small></div>`;
+    if (!w.length) h += `<div class="cr-empty">${L('아직 직원이 없어요. 캐릭터 카드에서 데려와 주세요.', 'No staff yet. Bring someone in from your character cards.')}<button class="cr-btn" type="button" data-act="hire">${L('직원 고용', 'Hire staff')}</button></div>`;
+    else h += w.map(s => `<button type="button" class="cr-who" data-act="findStaff" data-id="${esc(s.id)}">${faceChip(s.id, 30)}<b>${esc(book(s.id)?.name)}</b>${heartRow(bossRel(s.id))}<span class="cr-doing${s.absent ? ' off' : ''}">${doingLabel(s)}</span></button>`).join('');
+    h += `</section>`;
+    // 버튼
+    let main;
+    if (g.phase === 'ready') main = `<button class="cr-pbtn" type="button" data-act="startDay" ${w.filter(s => !s.absent).length ? '' : 'disabled'}>${L('오늘 영업 시작 ›', 'Open the shop ›')}</button>`;
+    else main = `<button class="cr-pbtn" type="button" disabled>${L('오늘 영업 끝 · 내일 또 만나요', 'Done for today · see you tomorrow')}</button>${S().skipWait ? `<button class="cr-btn" type="button" data-act="nextDay">${L('바로 다음 날로', 'Skip to next day')}</button>` : ''}`;
+    h += `<div class="cr-actions"><button class="cr-btn" type="button" data-act="quickBuy">${L('재료 사기', 'Buy stock')}</button>${main}</div><div class="cr-cookies" aria-hidden="true"></div>`;
+    return h;
+}
+
+function mountShopScene() {
+    const host = root.querySelector('#cr-shopScene'); if (!host) return;
+    const g = G();
+    const sc = addScene(createScene(host, { size: g.size, height: 170, zoom: .78, focus: [5, 3], zoomKey: 'shop' }));
+    const hr = new Date().getHours();
+    const tod = g.phase === 'done' ? (hr >= 18 || hr < 6 ? 'night' : 'eve') : hr < 10 ? 'am' : hr < 17 ? 'pm' : 'eve';
+    sc.setEnv({ tod, weather: g.weather });
+    sc.sign(g.phase === 'done' ? 'CLOSED' : 'OPEN');
+    sc.display(Math.min(6, Math.ceil(g.ing / 3)));
+    const stains = [];
+    for (let i = 0; i < Math.round((100 - g.clean) / 15); i++) { const [c, r] = sc.randomFree(); stains.push({ c, r, dx: Math.random() * 8 - 4 }); }
+    sc.setStains(stains);
+    const lay = sc.lay;
+    const spotOf = s => {
+        if (g.phase === 'done' || s.absent) return null;
+        if ((s.fatigue ?? 0) >= 75) return lay.idle[0];
+        return { bake: lay.spots.oven, serve: lay.spots.counter, floor: stains[0] ? [stains[0].c, stains[0].r] : lay.idle[1], all: lay.spots.counter }[s.role] || lay.idle[2];
+    };
+    const ents = [];
+    for (const s of g.staff) {
+        const p = spotOf(s); if (!p) continue;
+        const e = sc.ent({ staffId: s.id, label: book(s.id)?.name, c: p[0], r: p[1], onTap: e => { sc.jump(e); sc.say(e, tapLine(s.id)); } });
+        const icon = (s.fatigue ?? 0) >= 75 ? 'zzz' : (s.mood ?? 60) < 30 ? 'angry' : (s.mood ?? 60) < 45 ? 'sweat' : (s.mood ?? 60) > 75 ? 'note' : s.role === 'bake' ? 'spark' : s.role === 'floor' && stains.length ? 'broom' : null;
+        sc.emo(e, icon);
+        if (s.role === 'bake' && icon !== 'zzz') { sc.work(e, true); sc.steam(true); }
+        ents.push(e);
+    }
+    // 한마디는 장면 말풍선으로 돌아가며
+    let k = 0;
+    const talk = () => { if (!ents.length) return; const e = ents[k++ % ents.length]; sc.say(e, line(e.staffId, k < ents.length ? 'greet' : ['tap1', 'tap2', 'tap3', 'chat'][k % 4]), 3200); };
+    setTimeout(talk, 600);
+    shopTimer = setInterval(talk, 4200);
+    root.__shopScene = { sc, ents };
+}
+
+// ---------- 👩‍🍳 직원 탭 ----------
+function staffTab() {
+    const g = G();
+    if (!g.staff.length) return `<section class="cr-card cr-empty">${L('아직 직원이 없어요.', 'No staff yet.')}<br><small class="cr-muted">${L('처음엔 3~4명까지 데려올 수 있어요.', 'You can bring in up to 3–4 people.')}</small><button class="cr-pbtn" type="button" data-act="hire">${L('직원 고용', 'Hire staff')}</button></section>`;
+    view.staffIdx = clamp(view.staffIdx, 0, g.staff.length - 1);
+    const s = g.staff[view.staffIdx], b = book(s.id) || {};
+    let h = `<div class="cr-row cr-pager"><button type="button" class="cr-ibtn" data-act="staffPrev" aria-label="${L('이전 직원', 'Previous')}">‹</button><span>${L('직원 상세', 'Staff')} · ${view.staffIdx + 1}/${g.staff.length}</span><button type="button" class="cr-ibtn" data-act="staffNext" aria-label="${L('다음 직원', 'Next')}">›</button><span class="cr-muted" style="margin-left:auto">${F(L('고용 {a}/{b}명', 'Hired {a}/{b}'), { a: g.staff.length, b: MAX_STAFF })}</span></div>`;
+    h += `<section class="cr-card cr-profile"><div class="cr-pfFace" style="${faceStyle(s.id)}"></div><div class="cr-pfInfo"><div class="cr-row"><b class="cr-pfName">${esc(b.name)}</b><button type="button" class="cr-ibtn" data-act="staffMenu" aria-label="${L('더 보기', 'More')}">…</button></div>${heartRow(bossRel(s.id))}<div class="cr-muted">${esc(b.job || '')}</div><div class="cr-tags">${(b.tags || []).map(t => `<span class="cr-tag">${esc(tagLabel(t))}</span>`).join('')}</div><p class="cr-intro">${esc(b.intro || '')}</p></div></section>`;
+    h += `<div class="cr-subtabs">${[['stats', '능력치', 'Skills'], ['manual', '설명서', 'Manual'], ['rel', '관계', 'Bonds'], ['log', '기록', 'History']].map(([id, ko, en]) => `<button type="button" class="${view.staffSub === id ? 'on' : ''}" data-act="staffSub" data-id="${id}">${L(ko, en)}</button>`).join('')}</div>`;
+    h += `<section class="cr-card">${staffSub(s, b)}</section>`;
+    h += `<div class="cr-actions"><button class="cr-btn" type="button" data-act="editMemo">${L('메모 편집', 'Edit note')}</button><button class="cr-pbtn" type="button" data-act="hire" ${g.staff.length >= MAX_STAFF ? 'disabled' : ''}>${L('직원 고용', 'Hire staff')}</button></div>`;
+    return h;
+}
+function skillRow(s, k, label, col) {
+    const lv = s[k];
+    return `<div class="cr-skill"><div class="cr-row"><b>${label}</b><span class="cr-lv">Lv ${lv}</span><span class="cr-muted" style="margin-left:auto">${lv >= 10 ? 'MAX' : F(L('경험 {a}/{b}', 'EXP {a}/{b}'), { a: s.exp?.[k] || 0, b: skillNeed(lv) })}</span></div><div class="cr-ten">${[...Array(10)].map((_, i) => `<i style="${i < lv ? 'background:' + col : ''}"></i>`).join('')}</div></div>`;
+}
+function staffSub(s, b) {
+    const g = G();
+    switch (view.staffSub) {
+        case 'manual': {
+            const m = b.manual || {};
+            const row = (ko, en, v) => v ? `<div class="cr-mrow"><b>${L(ko, en)}</b><p>${esc(v)}</p></div>` : '';
+            return row('성격', 'Personality', m.personality) + row('말투', 'Speech', m.speech) + row('가치관', 'Values', m.values) + row('행동 원칙', 'How they act', m.principles) + row('단점', 'Flaws', m.flaws) + row('사장·일을 대하는 태도', 'Attitude to boss & work', m.attitude) +
+                (m.examples?.length ? `<div class="cr-mrow"><b>${L('예시 대사', 'Example lines')}</b>${m.examples.map(x => `<p class="cr-quote">“${esc(x)}”</p>`).join('')}</div>` : '') +
+                `<div class="cr-actions"><button class="cr-btn" type="button" data-act="editManual">${L('고치기', 'Edit')}</button><button class="cr-btn" type="button" data-act="reextract">${L('카드에서 다시 뽑기', 'Re-read from card')}</button></div><p class="cr-muted">${L('다시 뽑아도 가게 기억(관계·기록)은 그대로예요.', 'Re-reading keeps shop memories (bonds, history).')}</p>`;
+        }
+        case 'rel': {
+            const others = [{ id: 'boss' }, ...g.staff.filter(o => o.id !== s.id)];
+            return others.map(o => {
+                const r = o.id === 'boss' ? rel('boss', s.id) : rel(s.id, o.id);
+                const face = o.id === 'boss' ? `<span class="cr-face boss">👑</span>` : faceChip(o.id, 30);
+                const nm = o.id === 'boss' ? L('사장님', 'Boss') : book(o.id)?.name;
+                return `<div class="cr-relrow">${face}<div style="flex:1"><div class="cr-row"><b>${esc(nm)}</b>${heartRow(r.v)}<span class="cr-muted">${r.v}</span></div>${r.memo ? `<p class="cr-muted">${esc(r.memo)}</p>` : ''}</div></div>`;
+            }).join('') || `<p class="cr-muted">${L('아직 관계가 없어요.', 'No bonds yet.')}</p>`;
+        }
+        case 'log': {
+            const list = g.memory[s.id] || [];
+            return list.length ? list.slice(0, 30).map(m => `<div class="cr-hist"><span class="cr-pill day sm">${F(L('{n}일', 'D{n}'), { n: m.day })}</span>${esc(m.text)}</div>`).join('') : `<p class="cr-muted">${L('아직 기록이 없어요.', 'Nothing yet.')}</p>`;
+        }
+        default: {
+            const moodT = (s.mood ?? 60) >= 70 ? L('기분 좋음', 'Happy') : (s.mood ?? 60) >= 45 ? L('그럭저럭', 'Okay') : (s.mood ?? 60) >= 25 ? L('기분 별로', 'Down') : L('화남', 'Upset');
+            return skillRow(s, 'bake', L('제빵', 'Baking'), '#F29A7C') + skillRow(s, 'serve', L('접객', 'Service'), '#F7B6C6') +
+                `<div class="cr-row" style="margin-top:8px;gap:6px"><span class="cr-tag">${L('기분', 'Mood')} · ${moodT}</span><span class="cr-tag">${L('피로', 'Fatigue')} ${Math.round(s.fatigue ?? 0)}</span><span class="cr-tag">${roleLabel(s.role)}</span></div>
+<p class="cr-note">${L('능력이 자라도 성격은 그대로예요. 유능해도 사고는 칠 수 있어요.', 'Skills grow, personality doesn\'t. Even a pro can cause trouble.')}</p>`;
+        }
+    }
+}
+
+// ---------- 📋 결재함 ----------
+function inboxTab() {
+    const g = G();
+    let h = `<div class="cr-row cr-inboxHead"><span>${L('결정 안 하면 그 일은 멈춰 있어요', 'Undecided items just wait here')}</span><b>${g.inbox.length}/${MAX_INBOX}</b></div>`;
+    for (const it of g.inbox) {
+        const info = inboxInfo(it);
+        const say = it.line ? `<p class="cr-say">“${esc(it.line)}”</p>` : '';
+        h += `<section class="cr-card cr-ib ${info.tag}">${it.staffId && staffById(it.staffId) ? faceChip(it.staffId, 36) : '<span class="cr-face blank big">📋</span>'}<div style="flex:1"><div class="cr-row"><span class="cr-ibTag ${info.tag}">${{ idea: L('제안', 'Idea'), complaint: L('불만', 'Complaint'), money: L('돈', 'Money') }[info.tag]}</span><b>${esc(info.title)}</b></div>${say}<p class="cr-muted">${esc(info.desc)}</p><div class="cr-actions"><button class="cr-btn" type="button" data-act="ibNo" data-id="${it.id}">${esc(info.b)}</button><button class="cr-pbtn sm" type="button" data-act="ibYes" data-id="${it.id}">${esc(info.a)}</button></div></div></section>`;
+    }
+    for (let i = g.inbox.length; i < MAX_INBOX; i++) h += `<div class="cr-slot">${L('빈 자리', 'Empty')}</div>`;
+    if (g.inboxHistory.length) h += `<details class="cr-card"><summary>${L('지난 결재 기록 보기', 'Past decisions')}</summary>${g.inboxHistory.slice(0, 20).map(x => `<div class="cr-hist"><span class="cr-pill day sm">${F(L('{n}일', 'D{n}'), { n: x.day })}</span>${esc(x.title)} → <b>${x.yes ? L('승인', 'Yes') : L('거절', 'No')}</b></div>`).join('')}</details>`;
+    return h;
+}
+
+// ---------- 📖 일지 ----------
+function journalTab() {
+    const s = S(), g = G();
+    let h = `<div class="cr-seg"><button type="button" class="${view.journal === 'this' ? 'on' : ''}" data-act="jMode" data-id="this">${L('이번 가게', 'This shop')}</button><button type="button" class="${view.journal === 'past' ? 'on' : ''}" data-act="jMode" data-id="past">${L('지난 가게들', 'Past shops')} (${s.pastShops.length})</button></div>`;
+    if (view.journal === 'past') {
+        if (!s.pastShops.length) return h + `<p class="cr-muted cr-center">${L('아직 문 닫은 가게가 없어요.', 'No closed shops yet.')}</p>`;
+        return h + s.pastShops.map(p => `<section class="cr-card cr-past"><div class="cr-ttl">🏚 ${esc(p.name)} <small>${F(L('{n}일 영업', '{n} days'), { n: p.days })}</small></div>
+<div class="cr-muted">${L('최고 평판', 'Best rep')} ${p.maxRep} · ${L('가장 많이 번 날', 'Best day')} ${p.bestDay ? F(L('{d}일 {m}', 'D{d} {m}'), { d: p.bestDay.day, m: money(p.bestDay.revenue) }) : '-'}</div>
+${(p.memorable || []).map(m => `<div class="cr-hist"><span class="cr-pill day sm">${F(L('{n}일', 'D{n}'), { n: m.day })}</span>${esc(m.title)}${m.text ? ' — ' + esc(m.text) : ''}</div>`).join('')}
+${(p.reviews || []).map(r => `<div class="cr-hist"><b>${esc(r.name)}</b> ${esc(r.text)}</div>`).join('')}
+${p.bossWords ? `<p class="cr-say">👑 “${esc(p.bossWords)}”</p>` : ''}</section>`).join('');
+    }
+    if (!g.journal.length) return h + `<p class="cr-muted cr-center">${L('아직 기록이 없어요. 첫 영업을 시작해 보세요!', 'Nothing yet. Open the shop for the first time!')}</p>`;
+    return h + g.journal.map(j => `<section class="cr-card cr-jday ${j.mode}"><div class="cr-ttl"><span class="cr-pill day sm">${F(L('{n}일째', 'Day {n}'), { n: j.day })}</span>${j.mode === 'auto' ? L('사장님 없음', 'Boss away') : L('직접 영업', 'You ran it')}<small>${weatherLabel(j.weather)}</small></div>
+${(j.events || []).map(e => `<div class="cr-hist">${e.staffId && book(e.staffId) ? nameTag(e.staffId) : ''}<b>${esc(e.title)}</b>${e.text ? ' — ' + esc(e.text) : ''}</div>`).join('') || `<p class="cr-muted">${L('조용한 하루', 'A quiet day')}</p>`}
+${j.diaries && Object.keys(j.diaries).length ? Object.entries(j.diaries).map(([id, d]) => `<div class="cr-hist">${book(id) ? nameTag(id) : ''}<i>“${esc(d)}”</i></div>`).join('') : ''}
+<div class="cr-jsum">${L('돈', 'Money')} ${signedMoney(j.delta?.money || 0)} · ${L('평판', 'Rep')} ${(j.delta?.rep || 0) >= 0 ? '+' : ''}${j.delta?.rep || 0} · ${L('경험', 'EXP')} +${j.delta?.exp || 0}</div></section>`).join('');
+}
+
+// ---------- 시트·모달·알림 ----------
+export function openSheet(html, lock = false) {
+    const sh = root.querySelector('.cr-sheet');
+    sh.innerHTML = `<div class="cr-grab"></div>${html}`;
+    sh.classList.toggle('lock', lock);
+    sh.classList.add('open'); root.querySelector('.cr-dim').classList.add('on');
+}
+export function closeSheet() {
+    if (!root) return;
+    root.querySelector('.cr-sheet').classList.remove('open', 'lock');
+    if (!root.querySelector('.cr-modal').classList.contains('open')) root.querySelector('.cr-dim').classList.remove('on');
+}
+export function openModal(html) {
+    const m = root.querySelector('.cr-modal');
+    m.innerHTML = html; m.classList.add('open'); root.querySelector('.cr-dim').classList.add('on');
+    return m;
+}
+export function closeModal() {
+    if (!root) return;
+    root.querySelector('.cr-modal').classList.remove('open');
+    if (!root.querySelector('.cr-sheet').classList.contains('open')) root.querySelector('.cr-dim').classList.remove('on');
+}
+let toastT = null;
+export function toast(t, ms = 2600) {
+    const el = root?.querySelector('.cr-toast'); if (!el) return;
+    el.textContent = t; el.classList.add('show');
+    clearTimeout(toastT); toastT = setTimeout(() => el.classList.remove('show'), ms);
+}
+export function confirmBox(text, yes, no = L('취소', 'Cancel')) {
+    return new Promise(res => {
+        const m = openModal(`<p class="cr-mtext">${esc(text)}</p><div class="cr-actions"><button class="cr-btn" type="button" data-r="0">${esc(no)}</button><button class="cr-pbtn sm" type="button" data-r="1">${esc(yes)}</button></div>`);
+        m.querySelectorAll('[data-r]').forEach(b => b.onclick = e => { e.stopPropagation(); closeModal(); res(b.dataset.r === '1'); });
+    });
+}
+
+// ---------- 고용 ----------
+function hirePicker() {
+    const g = G();
+    const chars = (ctx().characters || []).filter(c => c && c.avatar && c.name);
+    const hired = new Set(g.staff.map(s => s.id));
+    const m = openModal(`<div class="cr-mtitle">${L('직원 고용', 'Hire staff')}<small>${L('내 캐릭터 카드에서 골라요', 'Pick from your character cards')}</small></div>
+<input class="cr-input" type="search" placeholder="${L('이름 검색', 'Search name')}" aria-label="${L('이름 검색', 'Search name')}">
+<div class="cr-pick"></div><div class="cr-actions"><button class="cr-btn" type="button" data-act="modalClose">${L('닫기', 'Close')}</button></div>`);
+    const list = m.querySelector('.cr-pick');
+    const draw = q => {
+        const f = chars.filter(c => !q || c.name.toLowerCase().includes(q.toLowerCase())).slice(0, 80);
+        list.innerHTML = f.map(c => `<button type="button" class="cr-pickItem" data-av="${esc(c.avatar)}" ${hired.has(c.avatar) ? 'disabled' : ''}><img loading="lazy" src="/thumbnail?type=avatar&file=${encodeURIComponent(c.avatar)}" alt=""><span>${esc(c.name)}</span>${hired.has(c.avatar) ? `<small>${L('근무 중', 'Hired')}</small>` : ''}</button>`).join('') || `<p class="cr-muted">${L('캐릭터가 없어요.', 'No characters.')}</p>`;
+    };
+    draw('');
+    m.querySelector('.cr-input').oninput = e => draw(e.target.value);
+    list.onclick = e => { const b = e.target.closest('.cr-pickItem'); if (b && !b.disabled) hireFlow(b.dataset.av); };
+}
+
+async function hireFlow(avatar) {
+    const ch = (ctx().characters || []).find(c => c.avatar === avatar);
+    if (!ch) return;
+    openModal(`<div class="cr-mtitle">${esc(ch.name)}</div><div class="cr-loading big">${L('카드를 읽고 직원 설명서를 만드는 중…', 'Reading the card and writing the staff manual…')}</div>`);
+    const s = S();
+    let made = s.staffBook[avatar]?.manual ? s.staffBook[avatar] : null;
+    if (!made) {
+        const r = await makeManual(avatar);
+        if (!r) { openModal(`<p class="cr-mtext">${L('AI 응답을 받지 못했어요. 연결 상태를 확인하고 다시 시도해 주세요.', 'Could not get an AI response. Check your connection and try again.')}</p><div class="cr-actions"><button class="cr-btn" type="button" data-act="modalClose">${L('닫기', 'Close')}</button><button class="cr-pbtn sm" type="button" data-act="hireRetry" data-id="${esc(avatar)}">${L('다시 시도', 'Retry')}</button></div>`); return; }
+        made = { avatar, name: ch.name, face: s.staffBook[avatar]?.face || { z: 2, x: 50, y: 14 }, ...r, baseBake: r.bake, baseServe: r.serve };
+    }
+    pointsModal(avatar, ch.name, made);
+}
+
+function pointsModal(avatar, name, made) {
+    const pts = { bake: 0, serve: 0 };
+    const draw = () => {
+        const left = 3 - pts.bake - pts.serve;
+        const row = (k, ko, en) => `<div class="cr-row cr-ptRow"><b>${L(ko, en)}</b><span class="cr-lv">Lv ${made['base' + (k === 'bake' ? 'Bake' : 'Serve')] + pts[k]}</span><span class="cr-stp" style="margin-left:auto"><button type="button" data-pt="${k}" data-d="-1" aria-label="-">−</button><button type="button" data-pt="${k}" data-d="1" aria-label="+" ${left <= 0 ? 'disabled' : ''}>+</button></span></div>`;
+        const m = openModal(`<div class="cr-mtitle">${esc(name)}<small>${esc(made.job || '')}</small></div>
+<div class="cr-tags">${(made.tags || []).map(t => `<span class="cr-tag">${esc(tagLabel(t))}</span>`).join('')}</div>
+<p class="cr-intro">${esc(made.intro || '')}</p>
+<div class="cr-card flat">${row('bake', '제빵', 'Baking')}${row('serve', '접객', 'Service')}<p class="cr-muted">${F(L('사장님 포인트 {n}개 남음 · 시작 능력은 카드의 직업·경력으로 정했어요', '{n} boss points left · starting skills come from the card\'s job/experience'), { n: left })}</p></div>
+<div class="cr-actions"><button class="cr-btn" type="button" data-act="modalClose">${L('취소', 'Cancel')}</button><button class="cr-pbtn sm" type="button" data-act="hireOk">${L('고용하기', 'Hire')}</button></div>`);
+        m.querySelectorAll('[data-pt]').forEach(b => b.onclick = e => { e.stopPropagation(); const k = b.dataset.pt, d = +b.dataset.d; if (pts[k] + d < 0 || (d > 0 && left <= 0) || made['base' + (k === 'bake' ? 'Bake' : 'Serve')] + pts[k] + d > 10) return; pts[k] += d; draw(); });
+        m.querySelector('[data-act="hireOk"]').onclick = e => { e.stopPropagation(); doHire(avatar, made, pts); };
+    };
+    draw();
+}
+
+function doHire(avatar, made, pts) {
+    const s = S(), g = G();
+    if (g.staff.length >= MAX_STAFF) return;
+    const { bake, serve, baseBake, baseServe, ...bk } = made;
+    s.staffBook[avatar] = { ...bk, avatar, baseBake: baseBake ?? bake, baseServe: baseServe ?? serve };
+    g.staff.push({ id: avatar, avatar, color: nextColor(), bake: clamp((baseBake ?? bake) + pts.bake, 1, 10), serve: clamp((baseServe ?? serve) + pts.serve, 1, 10), exp: { bake: 0, serve: 0 }, mood: 65, fatigue: 20, hiredDay: g.day, role: 'floor', absent: false });
+    rel('boss', avatar);
+    assignRoles(g);
+    save();
+    closeModal();
+    view.tab = 'staff'; view.staffIdx = g.staff.length - 1; view.staffSub = 'stats';
+    render();
+    toast(F(L('{n} 님이 출근했어요!', '{n} joined the shop!'), { n: made.name }));
+    faceModal(avatar, true);
+}
+
+// ---------- 얼굴 위치 맞추기 ----------
+function faceModal(id, first = false) {
+    const b = book(id); if (!b) return;
+    const f = { ...(b.face || { z: 2, x: 50, y: 14 }) };
+    const m = openModal(`<div class="cr-mtitle">${L('얼굴 위치 맞추기', 'Adjust face')}<small>${first ? L('카드 그림에서 얼굴이 잘 보이게 맞춰 주세요', 'Frame the face from the card art') : ''}</small></div>
+<div class="cr-facePrev"><div class="cr-faceBig"></div><div class="cr-faceSmall"></div></div>
+<p class="cr-muted cr-center">${L('동그라미 안을 끌어서 옮길 수 있어요', 'Drag inside the circle to move')}</p>
+<label class="cr-range">${L('확대', 'Zoom')}<input type="range" min="100" max="400" step="5" data-k="z"></label>
+<label class="cr-range">${L('좌우', 'Left/right')}<input type="range" min="0" max="100" data-k="x"></label>
+<label class="cr-range">${L('위아래', 'Up/down')}<input type="range" min="0" max="100" data-k="y"></label>
+<div class="cr-actions"><button class="cr-btn" type="button" data-act="modalClose">${L('취소', 'Cancel')}</button><button class="cr-pbtn sm" type="button" data-act="faceOk">${L('저장', 'Save')}</button></div>`);
+    const big = m.querySelector('.cr-faceBig'), small = m.querySelector('.cr-faceSmall');
+    const url = avatarUrl(b.avatar);
+    const upd = () => {
+        const st = `background-image:url('${url}');background-size:${Math.round(100 * f.z)}% auto;background-position:${f.x}% ${f.y}%;background-color:${colorOf(staffById(id)).tag}`;
+        big.style.cssText = st; small.style.cssText = st;
+        m.querySelector('[data-k=z]').value = Math.round(f.z * 100); m.querySelector('[data-k=x]').value = f.x; m.querySelector('[data-k=y]').value = f.y;
+    };
+    upd();
+    m.querySelectorAll('input[type=range]').forEach(i => i.oninput = () => { f[i.dataset.k] = i.dataset.k === 'z' ? +i.value / 100 : +i.value; upd(); });
+    let drag = null;
+    big.addEventListener('pointerdown', e => { drag = { x: e.clientX, y: e.clientY, fx: f.x, fy: f.y }; big.setPointerCapture(e.pointerId); });
+    big.addEventListener('pointermove', e => { if (!drag) return; const k = 100 / (big.clientWidth * Math.max(.2, f.z - 1 + .3)); f.x = clamp(drag.fx - (e.clientX - drag.x) * k, 0, 100); f.y = clamp(drag.fy - (e.clientY - drag.y) * k, 0, 100); upd(); });
+    big.addEventListener('pointerup', () => { drag = null; });
+    m.querySelector('[data-act="faceOk"]').onclick = e => { e.stopPropagation(); b.face = { z: f.z, x: Math.round(f.x), y: Math.round(f.y) }; save(); closeModal(); render(); };
+}
+
+function staffMenu() {
+    const g = G(); const s = g.staff[view.staffIdx];
+    const m = openModal(`<div class="cr-mtitle">${esc(book(s.id)?.name)}</div><div class="cr-menuList">
+<button type="button" class="cr-btn" data-m="face">${L('얼굴 위치 맞추기', 'Adjust face')}</button>
+<button type="button" class="cr-btn" data-m="mini" disabled title="${L('4단계에서 추가될 예정', 'Coming later')}">${L('미니 모습 (준비 중)', 'Mini sprite (coming later)')}</button>
+<button type="button" class="cr-btn danger" data-m="fire">${L('해고', 'Let go')}</button>
+<button type="button" class="cr-btn" data-act="modalClose">${L('닫기', 'Close')}</button></div>`);
+    m.querySelector('[data-m=face]').onclick = e => { e.stopPropagation(); faceModal(s.id); };
+    m.querySelector('[data-m=fire]').onclick = async e => {
+        e.stopPropagation();
+        if (await confirmBox(F(L('{n} 님을 해고할까요? 가게 기억은 남아요.', 'Let {n} go? Their shop memories stay.'), { n: book(s.id)?.name }), L('해고', 'Let go'))) { fireStaff(s.id); view.staffIdx = 0; render(); }
+    };
+}
+
+function editManual() {
+    const g = G(); const s = g.staff[view.staffIdx]; const b = book(s.id); const mn = b.manual || {};
+    const fields = [['personality', '성격', 'Personality'], ['speech', '말투', 'Speech'], ['values', '가치관', 'Values'], ['principles', '행동 원칙', 'How they act'], ['flaws', '단점', 'Flaws'], ['attitude', '사장·일을 대하는 태도', 'Attitude to boss & work']];
+    const m = openModal(`<div class="cr-mtitle">${L('설명서 고치기', 'Edit manual')}</div>
+<label class="cr-field">${L('직업', 'Job')}<input class="cr-input" data-f="job" value="${esc(b.job || '')}"></label>
+<label class="cr-field">${L('소개', 'Intro')}<textarea class="cr-input" data-f="intro" rows="2">${esc(b.intro || '')}</textarea></label>
+${fields.map(([k, ko, en]) => `<label class="cr-field">${L(ko, en)}<textarea class="cr-input" data-m="${k}" rows="3">${esc(mn[k] || '')}</textarea></label>`).join('')}
+<label class="cr-field">${L('예시 대사 (줄마다 하나)', 'Example lines (one per line)')}<textarea class="cr-input" data-m="examples" rows="3">${esc((mn.examples || []).join('\n'))}</textarea></label>
+<div class="cr-actions"><button class="cr-btn" type="button" data-act="modalClose">${L('취소', 'Cancel')}</button><button class="cr-pbtn sm" type="button" data-act="manualOk">${L('저장', 'Save')}</button></div>`);
+    m.querySelector('[data-act=manualOk]').onclick = e => {
+        e.stopPropagation();
+        b.job = m.querySelector('[data-f=job]').value.trim(); b.intro = m.querySelector('[data-f=intro]').value.trim();
+        b.manual ??= {};
+        m.querySelectorAll('[data-m]').forEach(t => { b.manual[t.dataset.m] = t.dataset.m === 'examples' ? t.value.split('\n').map(x => x.trim()).filter(Boolean).slice(0, 6) : t.value.trim(); });
+        save(); closeModal(); render();
+    };
+}
+
+async function reextract() {
+    const g = G(); const s = g.staff[view.staffIdx]; const b = book(s.id);
+    if (!await confirmBox(L('카드를 다시 읽어 설명서를 새로 만들까요? 직접 고친 내용은 사라지고, 가게 기억은 그대로예요.', 'Re-read the card and rewrite the manual? Your edits will be replaced; shop memories stay.'), L('다시 뽑기', 'Re-read'))) return;
+    openModal(`<div class="cr-loading big">${L('카드를 다시 읽는 중…', 'Re-reading the card…')}</div>`);
+    const r = await makeManual(s.id);
+    if (!r) { closeModal(); toast(L('AI 응답을 받지 못했어요', 'No AI response')); return; }
+    Object.assign(b, { job: r.job, intro: r.intro, manual: r.manual, tags: r.tags, name: (ctx().characters || []).find(c => c.avatar === s.id)?.name || b.name });
+    save(); closeModal(); render(); toast(L('설명서를 새로 뽑았어요', 'Manual updated'));
+}
+
+function editMemo() {
+    const g = G(); const s = g.staff[view.staffIdx]; const r = rel('boss', s.id);
+    const m = openModal(`<div class="cr-mtitle">${L('사장님과의 한 줄 메모', 'One-line note with the boss')}</div><input class="cr-input" maxlength="80" value="${esc(r.memo || '')}"><div class="cr-actions"><button class="cr-btn" type="button" data-act="modalClose">${L('취소', 'Cancel')}</button><button class="cr-pbtn sm" type="button" data-act="memoOk">${L('저장', 'Save')}</button></div>`);
+    m.querySelector('[data-act=memoOk]').onclick = e => { e.stopPropagation(); r.memo = m.querySelector('input').value.trim().slice(0, 80); save(); closeModal(); render(); };
+}
+
+function quickBuy() {
+    const g = G(); let n = 5;
+    const draw = () => {
+        const m = openModal(`<div class="cr-mtitle">🍰 ${L('재료 사기', 'Buy stock')}<small>${F(L('지금 재고 {a} · 개당 {p}', 'In stock {a} · {p} each'), { a: g.ing, p: money(ING_PRICE) })}</small></div>
+<div class="cr-row"><span class="cr-stp"><button type="button" data-d="-5" aria-label="-">−</button><b>${n}</b><button type="button" data-d="5" aria-label="+">+</button></span><span style="margin-left:auto">${L('총', 'Total')} <b>${money(n * ING_PRICE)}</b></span></div>
+<p class="cr-muted">${L('디저트 재료는 밤마다 일부 상해요. 영업 날 아침에 사는 게 좋아요.', 'Some stock spoils every night. Buying on the morning of a business day is best.')}</p>
+<div class="cr-actions"><button class="cr-btn" type="button" data-act="modalClose">${L('취소', 'Cancel')}</button><button class="cr-pbtn sm" type="button" data-act="buyOk">${L('사기', 'Buy')}</button></div>`);
+        m.querySelectorAll('[data-d]').forEach(b => b.onclick = e => { e.stopPropagation(); n = clamp(n + +b.dataset.d, 0, 40); draw(); });
+        m.querySelector('[data-act=buyOk]').onclick = e => { e.stopPropagation(); g.ing += n; g.money -= n * ING_PRICE; save(); closeModal(); render(); toast(F(L('재료 {n}개를 샀어요', 'Bought {n} stock'), { n })); };
+    };
+    draw();
+}
+
+// ---------- 클릭 ----------
+async function onClick(e) {
+    const t = e.target.closest('[data-act],[data-tab]');
+    if (!t || !root.contains(t)) return;
+    if (t.dataset.tab) { view.tab = t.dataset.tab; render(); return; }
+    const g = G();
+    const a = t.dataset.act;
+    switch (a) {
+        case 'close': closeWindow(); break;
+        case 'modalClose': closeModal(); break;
+        case 'toJournal': view.tab = 'journal'; view.journal = 'this'; render(); break;
+        case 'hire': if (g.staff.length < MAX_STAFF) hirePicker(); break;
+        case 'hireRetry': hireFlow(t.dataset.id); break;
+        case 'staffPrev': view.staffIdx = (view.staffIdx - 1 + g.staff.length) % g.staff.length; render(); break;
+        case 'staffNext': view.staffIdx = (view.staffIdx + 1) % g.staff.length; render(); break;
+        case 'staffSub': view.staffSub = t.dataset.id; render(); break;
+        case 'staffMenu': staffMenu(); break;
+        case 'editManual': editManual(); break;
+        case 'reextract': reextract(); break;
+        case 'editMemo': editMemo(); break;
+        case 'jMode': view.journal = t.dataset.id; render(); break;
+        case 'quickBuy': quickBuy(); break;
+        case 'nextDay': nextDayNow(); render(); break;
+        case 'ibYes': case 'ibNo': { const note = decideInbox(t.dataset.id, a === 'ibYes'); render(); if (note) toast(note); break; }
+        case 'findStaff': {
+            const ss = root.__shopScene; if (!ss) break;
+            const ent = ss.ents.find(x => x.staffId === t.dataset.id);
+            if (ent) { ss.sc.focus(ent, 1.4); ss.sc.say(ent, tapLine(ent.staffId), 2600); ss.sc.jump(ent); }
+            else toast(L('오늘은 가게에 없어요', 'Not in the shop today'));
+            break;
+        }
+        case 'startDay': {
+            if (g.phase !== 'ready') break;
+            g.phase = 'morning'; save(); render(); break;
+        }
+    }
+}
+
+// 다른 파일에서 쓰는 것
+export { hasTag, kindTitle, dayKey, newGame, isKo, menuInfo, ICON };
