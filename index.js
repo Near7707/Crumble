@@ -2,15 +2,20 @@
 import { esc, ctx } from './src/util.js';
 import { S, save } from './src/state.js';
 import { L, resetLang } from './src/i18n.js';
-import { openWindow, closeWindow, render } from './src/ui.js';
+import { openWindow, closeWindow, render, applyWinSize } from './src/ui.js';
 import { getProfiles } from './src/ai.js';
+import { businessActive } from './src/screens.js';
 
 function settingsHtml() {
     const s = S();
     const opt = (v, cur, label) => `<option value="${v}" ${v === cur ? 'selected' : ''}>${esc(label)}</option>`;
     return `<div class="crumble-settings"><div class="inline-drawer"><div class="inline-drawer-toggle inline-drawer-header"><b>Crumble</b><div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div></div>
 <div class="inline-drawer-content">
-<div class="flex-container"><button class="menu_button" id="crumble_open_btn"><i class="fa-solid fa-cookie-bite"></i> ${L('가게 열기', 'Open shop')}</button></div>
+<button class="menu_button crumble-openbtn" id="crumble_open_btn"><i class="fa-solid fa-cookie-bite"></i> ${L('가게 열기', 'Open shop')}</button>
+<label for="crumble_boss">${L('사장 이름', 'Owner name')}</label>
+<input id="crumble_boss" class="text_pole" type="text" maxlength="30" value="${esc(s.bossName || '')}" placeholder="${esc(L('비우면 페르소나 이름', 'Blank = persona name'))}">
+<label for="crumble_win">${L('창 크기', 'Window size')}</label>
+<select id="crumble_win" class="text_pole">${opt('auto', s.winSize || 'auto', L('자동 (컴퓨터에서 크게)', 'Auto (bigger on desktop)'))}${opt('s', s.winSize, L('보통', 'Normal'))}${opt('m', s.winSize, L('크게', 'Large'))}${opt('l', s.winSize, L('아주 크게', 'Extra large'))}</select>
 <label for="crumble_lang">${L('언어', 'Language')}</label>
 <select id="crumble_lang" class="text_pole">${opt('auto', s.lang, L('자동 (실리태번 언어)', 'Auto (SillyTavern language)'))}${opt('ko', s.lang, '한국어')}${opt('en', s.lang, 'English')}</select>
 <label for="crumble_profile">${L('AI 연결', 'AI connection')}</label>
@@ -57,6 +62,8 @@ function bindSettings() {
     const $ = sel => document.querySelector(sel);
     $('#crumble_open_btn')?.addEventListener('click', () => openWindow());
     $('#crumble_lang')?.addEventListener('change', e => { s.lang = e.target.value; resetLang(); save(); redrawSettings(); if (document.querySelector('#crumble-root.open')) render(); });
+    $('#crumble_boss')?.addEventListener('change', e => { s.bossName = e.target.value.trim().slice(0, 30); save(); });
+    $('#crumble_win')?.addEventListener('change', e => { s.winSize = e.target.value; save(); if (document.querySelector('#crumble-root.open')) { applyWinSize(); if (!businessActive()) render(); } });
     $('#crumble_profile')?.addEventListener('change', e => { s.profileId = e.target.value; save(); refreshProfileSelect(); });
     $('#crumble_cardref')?.addEventListener('change', e => { s.cardRef = e.target.value; save(); });
     $('#crumble_minutes')?.addEventListener('input', e => { s.businessMinutes = +e.target.value; $('#crumble_minutes_v').textContent = e.target.value; save(); });

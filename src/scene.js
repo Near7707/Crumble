@@ -13,7 +13,11 @@ const TW = 22, TH = 11;
 export function createScene(host, opts = {}) {
     const lay = layoutFor(opts.size || '11x9');
     const { cols: COLS, rows: ROWS, OX, OY, WW, WH } = lay;
-    const VH = opts.height || 230;
+    // 창이 넓으면 장면 높이도 같이 커지게 (폭 400 기준, 최대 1.45배)
+    const winEl = host.closest('.cr-win');
+    const grow = Math.min(1.45, Math.max(1, (winEl?.clientWidth || 400) / 400));
+    const VH0 = Math.round((opts.height || 230) * grow);
+    let VH = VH0;
     let VW = 366;
 
     const P = (c, r, h = 0) => [OX + (c - r) * TW, OY + (c + r) * TH - h];
@@ -120,7 +124,7 @@ export function createScene(host, opts = {}) {
     // ---------- 만들기 ----------
     host.innerHTML = `<div class="cr-scene" style="height:${VH}px"><div class="cr-world" style="width:${WW}px;height:${WH}px">${layer(0, floorSvg())}${layer(1, '', 'cr-props')}${furnitureHtml()}<div class="cr-tint"></div></div>
 <span class="cr-panhint">${L('끌어서 둘러보기 · 두 손가락으로 확대', 'Drag to look around · pinch to zoom')}</span></div>
-<div class="cr-zoom"><button class="cr-zi" type="button" aria-label="${L('확대', 'Zoom in')}">+</button><button class="cr-zo" type="button" aria-label="${L('축소', 'Zoom out')}">−</button><span class="cr-zl"></span><button class="cr-zfit" type="button" aria-label="${L('가게 전체 보기', 'Show whole shop')}">${L('전체', 'All')}</button></div>`;
+<div class="cr-zoom"><button class="cr-zi" type="button" aria-label="${L('확대', 'Zoom in')}">+</button><button class="cr-zo" type="button" aria-label="${L('축소', 'Zoom out')}">−</button><span class="cr-zl"></span><button class="cr-zfit" type="button" aria-label="${L('가게 전체 보기', 'Show whole shop')}">${L('전체', 'All')}</button></div><button class="cr-zbig" type="button" aria-label="${L('크게 보기', 'Big view')}">⤢ ${L('크게', 'Big')}</button>`;
     host.classList.add('cr-sbox');
     const scene = host.querySelector('.cr-scene'), world = host.querySelector('.cr-world');
     const Q = s => world.querySelector(s), QA = s => world.querySelectorAll(s);
@@ -272,8 +276,9 @@ export function createScene(host, opts = {}) {
 
     // ---------- 끌기 + 확대 ----------
     const zl = host.querySelector('.cr-zl');
-    let ZMIN = .5, ZMAX = 2, Z = opts.zoom || .8, px = 0, py = 0;
-    const measure = () => { VW = scene.clientWidth || VW; ZMIN = Math.min(VW / WW, VH / WH); };
+    const Z0 = Math.min(2, (opts.zoom || .8) * grow);
+    let ZMIN = .5, ZMAX = 2, Z = Z0, px = 0, py = 0;
+    const measure = () => { VW = scene.clientWidth || VW; VH = scene.clientHeight || VH; ZMIN = Math.min(VW / WW, VH / WH); };
     const apply = () => {
         const w = WW * Z, h = WH * Z;
         px = w <= VW ? (VW - w) / 2 : Math.min(0, Math.max(VW - w, px));
@@ -304,6 +309,37 @@ export function createScene(host, opts = {}) {
     host.querySelector('.cr-zi').onclick = () => { measure(); zoomAt(Z * 1.25, VW / 2, VH / 2, true); };
     host.querySelector('.cr-zo').onclick = () => { measure(); zoomAt(Z / 1.25, VW / 2, VH / 2, true); };
     host.querySelector('.cr-zfit').onclick = () => api.fit();
+
+    // ---------- 크게 보기: 장면을 창 전체로 옮겼다가 되돌린다 ----------
+    const zoomBar = host.querySelector('.cr-zoom'), bigBtn = host.querySelector('.cr-zbig');
+    let bigBox = null;
+    api.isBig = () => !!bigBox;
+    api.setBig = on => {
+        if (on === !!bigBox || !winEl) return;
+        // 지금 보던 가운데를 기억했다가 그대로 보여 준다
+        measure();
+        const cx = (VW / 2 - px) / Z, cy = (VH / 2 - py) / Z;
+        if (on) {
+            bigBox = document.createElement('div');
+            bigBox.className = 'cr-bigview';
+            winEl.appendChild(bigBox);
+            bigBox.append(scene, zoomBar, bigBtn);
+            scene.style.height = '100%';
+        } else {
+            host.append(scene, zoomBar, bigBtn);
+            scene.style.height = VH0 + 'px';
+            bigBox.remove(); bigBox = null;
+        }
+        bigBtn.textContent = on ? '⤡ ' + L('작게', 'Small') : '⤢ ' + L('크게', 'Big');
+        bigBtn.setAttribute('aria-label', on ? L('원래 크기로', 'Back to normal') : L('크게 보기', 'Big view'));
+        measure();
+        // 크게 볼 때는 한 단계 확대해서 (적어도 가게 전체가 화면 폭을 채우게)
+        if (on) Z = Math.min(ZMAX, Math.max(Z * 1.4, Math.min(VW / WW, VH / WH)));
+        else Z = Math.min(ZMAX, Math.max(Math.min(VW / WW, VH / WH), Z));
+        px = VW / 2 - cx * Z; py = VH / 2 - cy * Z;
+        world.classList.remove('smooth'); apply();
+    };
+    bigBtn.onclick = () => api.setBig(!bigBox);
 
     const local = e => { const r = scene.getBoundingClientRect(), k = r.width / VW || 1; return [(e.clientX - r.left) / k, (e.clientY - r.top) / k]; };
     const pts = new Map(); let drag = null, pinch = null, dragged = false, lastTap = 0, lastTapXY = [0, 0], moved = 0;
@@ -353,14 +389,14 @@ export function createScene(host, opts = {}) {
     // 끄는 중·확대 중엔 직원 누르기가 잘못 눌리지 않게
     scene.addEventListener('click', e => { if (dragged) { e.stopPropagation(); e.preventDefault(); dragged = false; } }, { capture: true, signal: ac.signal });
 
-    api.destroy = () => { api.dead = true; api.run++; ac.abort(); host.innerHTML = ''; };
+    api.destroy = () => { api.dead = true; api.run++; ac.abort(); bigBox?.remove(); bigBox = null; host.innerHTML = ''; };
 
     // 처음 보여줄 곳
     requestAnimationFrame(() => {
         measure();
         const saved = opts.zoomKey && settings().rememberZoom ? G()?.zoom?.[opts.zoomKey] : null;
         if (saved) { Z = saved.Z; px = saved.px; py = saved.py; apply(); }
-        else if (opts.focus) api.center(opts.focus[0], opts.focus[1], opts.zoom);
+        else if (opts.focus) api.center(opts.focus[0], opts.focus[1], Z0);
         else apply();
     });
 

@@ -323,3 +323,32 @@ button.cr-ent { cursor: pointer; }
 /* 확장 설정 칸 */
 .crumble-settings label { display: block; margin-top: 8px; }
 .crumble-settings small { display: block; opacity: .75; }
+
+/* 0.1.2 — 창 크기 (설정 "창 크기", 자동이면 컴퓨터에서 크게) */
+.cr-win.sz-m { width: min(500px, 100vw); height: min(860px, 100dvh); }
+.cr-win.sz-l { width: min(600px, 100vw); height: min(920px, 100dvh); }
+@media (max-width: 420px), (max-height: 640px) {
+    #crumble-root .cr-win { width: 100vw; height: 100dvh; border-radius: 0; border-width: 0; }
+}
+
+/* 사장 친밀도: 사이 나쁘면 파란 금 간 하트 */
+.cr-hearts.bad i.on { color: #6FA8DC; position: relative; }
+.cr-hearts.bad i.on::after { content: ''; position: absolute; left: 50%; top: 18%; width: 1.5px; height: 62%; background: var(--cr-card, #FFFDF9); transform: translateX(-50%) skewX(-22deg); border-radius: 1px; }
+
+/* 성격 태그 고르기 */
+.cr-tagPick .cr-tag { cursor: pointer; background: var(--cr-card); border-color: var(--cr-line2); color: inherit; font: inherit; font-size: 12px; padding: 3px 10px; }
+.cr-tagPick .cr-tag.on { background: var(--cr-pinkbg); border-color: #F2C6D2; font-weight: 800; }
+
+/* 기본 말풍선 */
+.cr-linesBox summary { cursor: pointer; }
+.cr-lineRow { display: flex; gap: 8px; font-size: 12.5px; padding: 3px 0; border-top: 1px dashed var(--cr-line); }
+.cr-lineRow .cr-muted { flex: none; width: 112px; }
+.cr-lineEdit { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
+.cr-lineEdit small { flex: none; width: 112px; }
+.cr-lineEdit .cr-input { flex: 1; min-width: 0; }
+
+/* 장면 크게 보기 */
+.cr-zbig { position: absolute; left: 7px; top: 7px; z-index: 31; height: 30px; padding: 0 10px; border-radius: 11px; border: 1.5px solid #C9A27E; background: rgba(255, 253, 249, .95); font-size: 12px; font-weight: 800; cursor: pointer; box-shadow: 0 2px 0 var(--cr-line2); }
+.cr-bigview { position: absolute; inset: 0; z-index: 58; background: var(--cr-cream); }
+.cr-bigview .cr-scene { border-radius: 0; border-width: 0; }
+.crumble-settings .crumble-openbtn { width: 100%; white-space: nowrap; display: flex; align-items: center; justify-content: center; gap: 6px; margin: 4px 0; }

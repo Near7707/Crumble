@@ -6,12 +6,12 @@ import {
     MAX_STAFF, MAX_INBOX, menuInfo, ING_PRICE, skillNeed, newGame,
 } from './state.js';
 import {
-    catchUp, storeAway, tagLabel, weatherLabel, roleLabel, workingStaff, inboxInfo, decideInbox,
+    TAGS, catchUp, storeAway, tagLabel, weatherLabel, roleLabel, workingStaff, inboxInfo, decideInbox,
     fireStaff, assignRoles, nextDayNow, kindTitle, hasTag,
 } from './rules.js';
 import { faceChip, faceStyle, ICON } from './looks.js';
 import { createScene } from './scene.js';
-import { awayJournal, makeManual } from './ai.js';
+import { awayJournal, makeManual, FALLBACK_KEYS } from './ai.js';
 import { line, tapLine } from './lines.js';
 import { renderBusiness, resumeIfNeeded, businessActive, pauseBusiness } from './screens.js';
 import { renderEnding } from './ending.js';
@@ -37,10 +37,32 @@ export function mount() {
 }
 export const inner = () => root.querySelector('.cr-inner');
 
+// 창 크기: 자동이면 폰은 작게(꽉 차게), 컴퓨터는 크게
+export function winSizeNow() {
+    const v = S().winSize || 'auto';
+    if (v !== 'auto') return v;
+    const w = window.innerWidth, h = window.innerHeight;
+    if (w >= 1200 && h >= 820) return 'l';
+    if (w >= 760 && h >= 700) return 'm';
+    return 's';
+}
+export function applyWinSize() {
+    const win = root?.querySelector('.cr-win'); if (!win) return;
+    const v = winSizeNow();
+    win.classList.remove('sz-s', 'sz-m', 'sz-l'); win.classList.add('sz-' + v);
+}
+let resizeT = null;
+window.addEventListener('resize', () => {
+    if (!view.open || (S().winSize || 'auto') !== 'auto') return;
+    clearTimeout(resizeT);
+    resizeT = setTimeout(() => { const win = root?.querySelector('.cr-win'); const before = win?.className; applyWinSize(); if (win && win.className !== before && !businessActive()) render(); }, 300);
+});
+
 export async function openWindow() {
     mount();
     ensureGame();
     root.classList.add('open');
+    applyWinSize();
     view.open = true;
     if (businessActive()) return; // 멈춰 둔 영업 화면 그대로
     const days = catchUp();
@@ -117,7 +139,7 @@ function afterTab() {
 }
 
 // ---------- 공통 조각 ----------
-const heartRow = v => `<span class="cr-hearts" aria-label="${L('사장 친밀도', 'Bond')} ${v}">${[0, 1, 2, 3, 4].map(i => `<i class="${i < hearts(v) ? 'on' : ''}">♥</i>`).join('')}</span>`;
+const heartRow = v => { const n = hearts(v), bad = v < 0; return `<span class="cr-hearts${bad ? ' bad' : ''}" aria-label="${L('사장 친밀도', 'Bond')} ${v}">${[0, 1, 2, 3, 4].map(i => `<i class="${i < n ? 'on' : ''}">♥</i>`).join('')}</span>`; };
 const bar = (v, col) => `<span class="cr-bar"><i style="width:${clamp(v, 0, 100)}%;background:${col}"></i></span>`;
 const nameTag = id => { const s = staffById(id); return `<span class="cr-ntag" style="background:${colorOf(s).tag}">${esc(book(id)?.name || '?')}</span>`; };
 export { heartRow, bar, nameTag };
@@ -224,6 +246,7 @@ function staffSub(s, b) {
             const row = (ko, en, v) => v ? `<div class="cr-mrow"><b>${L(ko, en)}</b><p>${esc(v)}</p></div>` : '';
             return row('성격', 'Personality', m.personality) + row('말투', 'Speech', m.speech) + row('가치관', 'Values', m.values) + row('행동 원칙', 'How they act', m.principles) + row('단점', 'Flaws', m.flaws) + row('사장·일을 대하는 태도', 'Attitude to boss & work', m.attitude) +
                 (m.examples?.length ? `<div class="cr-mrow"><b>${L('예시 대사', 'Example lines')}</b>${m.examples.map(x => `<p class="cr-quote">“${esc(x)}”</p>`).join('')}</div>` : '') +
+                linesBox(b) +
                 `<div class="cr-actions"><button class="cr-btn" type="button" data-act="editManual">${L('고치기', 'Edit')}</button><button class="cr-btn" type="button" data-act="reextract">${L('카드에서 다시 뽑기', 'Re-read from card')}</button></div><p class="cr-muted">${L('다시 뽑아도 가게 기억(관계·기록)은 그대로예요.', 'Re-reading keeps shop memories (bonds, history).')}</p>`;
         }
         case 'rel': {
@@ -421,17 +444,45 @@ function staffMenu() {
     };
 }
 
+function lineKeyLabel(k) {
+    return {
+        greet: L('출근 인사', 'Morning hello'), pricy: L('가격이 비쌀 때', 'Prices high'), cheap: L('가격이 쌀 때', 'Prices low'),
+        buyMore: L('재료를 많이 샀을 때', 'Bought lots'), buyLess: L('재료를 적게 샀을 때', 'Bought little'), busy: L('손님 많을 때', 'Busy'),
+        soldout: L('다 팔렸을 때', 'Sold out'), mistake: L('실수했을 때', 'Mistake'), sneak: L('몰래 먹다 걸렸을 때', 'Caught snacking'),
+        chat: L('손님과 수다', 'Chatting'), clean: L('청소할 때', 'Cleaning'), tired: L('피곤할 때', 'Tired'),
+        tap1: L('눌렀을 때 1', 'Tapped 1'), tap2: L('눌렀을 때 2', 'Tapped 2'), tap3: L('눌렀을 때 3', 'Tapped 3'),
+    }[k] || k;
+}
+
+function linesBox(b) {
+    const ln = b.lines || {};
+    if (!Object.keys(ln).length) return `<p class="cr-muted">${L('기본 말풍선이 아직 없어요. [카드에서 다시 뽑기]를 하면 이 직원 말투로 만들어져요.', 'No fallback bubbles yet. [Re-read from card] makes them in this character\'s voice.')}</p>`;
+    return `<details class="cr-card flat cr-linesBox"><summary><b>${L('기본 말풍선', 'Fallback bubbles')}</b> <small class="cr-muted">${L('AI가 응답하지 않을 때 장면에서 써요', 'Used in the scene when the AI doesn\'t answer')}</small></summary>${FALLBACK_KEYS.filter(k => ln[k]).map(k => `<div class="cr-lineRow"><span class="cr-muted">${esc(lineKeyLabel(k))}</span><span>“${esc(ln[k])}”</span></div>`).join('')}</details>`;
+}
+
 function editManual() {
     const g = G(); const s = g.staff[view.staffIdx]; const b = book(s.id); const mn = b.manual || {};
+    const tags = [...(b.tags || [])];
     const fields = [['personality', '성격', 'Personality'], ['speech', '말투', 'Speech'], ['values', '가치관', 'Values'], ['principles', '행동 원칙', 'How they act'], ['flaws', '단점', 'Flaws'], ['attitude', '사장·일을 대하는 태도', 'Attitude to boss & work']];
     const m = openModal(`<div class="cr-mtitle">${L('설명서 고치기', 'Edit manual')}</div>
 <label class="cr-field">${L('직업', 'Job')}<input class="cr-input" data-f="job" value="${esc(b.job || '')}"></label>
 <label class="cr-field">${L('소개', 'Intro')}<textarea class="cr-input" data-f="intro" rows="2">${esc(b.intro || '')}</textarea></label>
 ${fields.map(([k, ko, en]) => `<label class="cr-field">${L(ko, en)}<textarea class="cr-input" data-m="${k}" rows="3">${esc(mn[k] || '')}</textarea></label>`).join('')}
 <label class="cr-field">${L('예시 대사 (줄마다 하나)', 'Example lines (one per line)')}<textarea class="cr-input" data-m="examples" rows="3">${esc((mn.examples || []).join('\n'))}</textarea></label>
+<div class="cr-field">${L('성격 태그 (1~3개)', 'Personality tags (1–3)')}<div class="cr-tags cr-tagPick">${Object.keys(TAGS).map(t => `<button type="button" class="cr-tag${tags.includes(t) ? ' on' : ''}" data-tag="${t}" aria-pressed="${tags.includes(t)}">${esc(tagLabel(t))}</button>`).join('')}</div><small class="cr-muted">${L('태그는 오늘 일어날 사건과 가게 안에서 돌아다니는 모습에만 쓰여요. 대사는 설명서를 따라요.', 'Tags only pick events and how they move around the shop. Lines follow the manual.')}</small></div>
+${b.lines && Object.keys(b.lines).length ? `<label class="cr-field">${L('기본 말풍선 (AI가 응답하지 않을 때)', 'Fallback bubbles (when the AI doesn\'t answer)')}${FALLBACK_KEYS.map(k => `<span class="cr-lineEdit"><small class="cr-muted">${esc(lineKeyLabel(k))}</small><input class="cr-input" data-l="${k}" maxlength="60" value="${esc(b.lines[k] || '')}" placeholder="${esc(L('비우면 공통 대사', 'Blank = common line'))}"></span>`).join('')}</label>` : ''}
 <div class="cr-actions"><button class="cr-btn" type="button" data-act="modalClose">${L('취소', 'Cancel')}</button><button class="cr-pbtn sm" type="button" data-act="manualOk">${L('저장', 'Save')}</button></div>`);
+    m.querySelectorAll('[data-tag]').forEach(btn => btn.onclick = e => {
+        e.stopPropagation();
+        const t = btn.dataset.tag, i = tags.indexOf(t);
+        if (i >= 0) { if (tags.length <= 1) return toast(L('태그는 1개 이상 있어야 해요', 'Keep at least one tag')); tags.splice(i, 1); }
+        else { if (tags.length >= 3) return toast(L('태그는 3개까지예요', 'Up to 3 tags')); tags.push(t); }
+        btn.classList.toggle('on', tags.includes(t)); btn.setAttribute('aria-pressed', tags.includes(t));
+    });
     m.querySelector('[data-act=manualOk]').onclick = e => {
         e.stopPropagation();
+        b.tags = [...tags];
+        if (b.lines) m.querySelectorAll('[data-l]').forEach(i => { const v = i.value.trim().slice(0, 60); if (v) b.lines[i.dataset.l] = v; else delete b.lines[i.dataset.l]; });
         b.job = m.querySelector('[data-f=job]').value.trim(); b.intro = m.querySelector('[data-f=intro]').value.trim();
         b.manual ??= {};
         m.querySelectorAll('[data-m]').forEach(t => { b.manual[t.dataset.m] = t.dataset.m === 'examples' ? t.value.split('\n').map(x => x.trim()).filter(Boolean).slice(0, 6) : t.value.trim(); });
@@ -445,7 +496,7 @@ async function reextract() {
     openModal(`<div class="cr-loading big">${L('카드를 다시 읽는 중…', 'Re-reading the card…')}</div>`);
     const r = await makeManual(s.id);
     if (!r) { closeModal(); toast(L('AI 응답을 받지 못했어요', 'No AI response')); return; }
-    Object.assign(b, { job: r.job, intro: r.intro, manual: r.manual, tags: r.tags, name: (ctx().characters || []).find(c => c.avatar === s.id)?.name || b.name });
+    Object.assign(b, { job: r.job, intro: r.intro, manual: r.manual, tags: r.tags, lines: r.lines, linesLang: r.linesLang, name: (ctx().characters || []).find(c => c.avatar === s.id)?.name || b.name });
     save(); closeModal(); render(); toast(L('설명서를 새로 뽑았어요', 'Manual updated'));
 }
 

@@ -1,5 +1,5 @@
 // AI 대사가 없을 때 쓰는 기본 말풍선 (성격 태그로 조금씩 다르게)
-import { L } from './i18n.js';
+import { L, AI_LANG } from './i18n.js';
 import { pick } from './util.js';
 import { G, book } from './state.js';
 
@@ -36,6 +36,10 @@ export function line(staffId, key) {
     const g = G();
     const ai = g?.today?.lines?.[staffId]?.[key];
     if (ai) return ai;
+    // 고용할 때 그 직원 말투로 뽑아 둔 기본 말풍선 (지금 언어와 같을 때만)
+    const b0 = book(staffId);
+    const own = b0?.linesLang === AI_LANG() ? b0.lines?.[key] : null;
+    if (own) return own;
     const tags = book(staffId)?.tags || [];
     for (const t of tags) { const v = BY_TAG[t]?.[key]; if (v) return L(...v); }
     const b = BASE[key];

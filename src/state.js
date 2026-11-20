@@ -46,6 +46,8 @@ const DEFAULT_SETTINGS = {
     rememberZoom: false,
     responseLength: 1600,
     profileId: '', // '' = 지금 연결 그대로
+    bossName: '', // '' = 페르소나 이름
+    winSize: 'auto', // auto | s | m | l
     staffBook: {},
     game: null,
     pastShops: [],
@@ -145,7 +147,8 @@ export function addRel(a, b, d, memo) {
     return r;
 }
 export const bossRel = id => rel('boss', id).v;
-export const hearts = v => clamp(Math.round((v + 100) / 40), 0, 5);
+// 하트 칸 수: 0이면 빈 하트, 0~100은 20마다 하나 / 0 밑은 금 간 파란 하트가 같은 방식으로
+export const hearts = v => clamp(Math.round(Math.abs(v || 0) / 20), 0, 5);
 
 export function remember(staffId, text) {
     const g = G();

@@ -5,7 +5,8 @@ import { S, G, book, staffById, rel, menuInfo } from './state.js';
 import { EVENT_KINDS, TAGS, isImportantKind, WEATHER, roleLabel } from './rules.js';
 import { AI_LANG, isKo } from './i18n.js';
 
-const bossName = () => ctx().name1 || (isKo() ? '사장님' : 'Boss');
+// 설정의 "사장 이름" → 없으면 페르소나 이름 → 없으면 "사장님"
+const bossName = () => String(S().bossName || '').trim() || ctx().name1 || (isKo() ? '사장님' : 'Boss');
 
 /** 실리태번 연결 프로필 목록 (읽기만) */
 export function getProfiles() {
@@ -20,9 +21,9 @@ export function activeProfile() {
     return getProfiles().find(p => p.id === id) || null;
 }
 
-async function raw(prompt, system) {
+async function raw(prompt, system, minLen = 0) {
     const c = ctx();
-    const len = S().responseLength || 1600;
+    const len = Math.max(S().responseLength || 1600, minLen);
     // 게임용 연결 프로필: 채팅 쪽 연결은 바꾸지 않고 이 요청만 그 프로필로 보낸다.
     // 프로필을 못 찾으면 아래 "지금 연결 그대로"로 내려간다.
     const prof = activeProfile();
@@ -42,11 +43,11 @@ async function raw(prompt, system) {
     return await fn({ prompt, systemPrompt: system, responseLength: len });
 }
 
-async function askJson(prompt, system, tries = 2) {
+async function askJson(prompt, system, tries = 2, minLen = 0) {
     let lastErr = null;
     for (let i = 0; i < tries; i++) {
         try {
-            const out = await raw(prompt, system);
+            const out = await raw(prompt, system, minLen);
             const j = parseJsonLoose(out);
             if (j) return j;
             lastErr = new Error('bad json');
@@ -121,7 +122,16 @@ function staffBlock(ids, withCard) {
 
 const keyMap = ids => Object.fromEntries(ids.map((id, i) => ['S' + (i + 1), id]));
 
-// ---------- 1. 고용: 직원 설명서 ----------
+// ---------- 1. 고용: 직원 설명서 (+ 그 직원 말투의 기본 말풍선) ----------
+// 기본 말풍선: AI가 실패하거나 아직 안 불렀을 때 장면에서 쓰는 대사. 고용 호출에서 같이 뽑는다.
+export const FALLBACK_KEYS = ['greet', 'pricy', 'cheap', 'buyMore', 'buyLess', 'busy', 'soldout', 'mistake', 'sneak', 'chat', 'clean', 'tired', 'tap1', 'tap2', 'tap3'];
+const FALLBACK_HINT = 'greet=arriving in the morning, pricy=boss set prices high, cheap=prices low, buyMore=boss bought lots of stock, buyLess=bought too little, busy=shop is crowded, soldout=display is empty, mistake=messed up a batch, sneak=caught sneaking a bite, chat=small talk with a customer, clean=while cleaning, tired=tired, tap1/tap2/tap3=random lines when the boss taps them';
+function cleanLines(o) {
+    const out = {};
+    if (o && typeof o === 'object') for (const k of FALLBACK_KEYS) { const v = str(Array.isArray(o[k]) ? o[k][0] : o[k], 60); if (v) out[k] = v; }
+    return out;
+}
+
 export async function makeManual(avatar) {
     const ch = (ctx().characters || []).find(c => c.avatar === avatar);
     if (!ch) return null;
@@ -147,9 +157,12 @@ Return JSON:
  "examples": ["3 short example lines they might say at the shop"],
  "tags": ["2-3 tags chosen ONLY from: ${tagList}"],
  "bake": 2-8 (starting baking skill, judged from job/experience, NOT personality),
- "serve": 2-8 (starting customer-service skill, judged from job/experience, NOT personality)
+ "serve": 2-8 (starting customer-service skill, judged from job/experience, NOT personality),
+ "lines": { very short in-shop speech bubbles (max ~25 characters each) in THIS character's own voice and speech style,
+   one string per key: ${FALLBACK_KEYS.map(k => `"${k}"`).join(', ')}
+   (${FALLBACK_HINT}) }
 }`;
-    const j = await askJson(prompt, system());
+    const j = await askJson(prompt, system(), 2, 2400);
     if (!j) return null;
     const tags = (Array.isArray(j.tags) ? j.tags : []).map(t => String(t).trim()).filter(t => TAGS[t]).slice(0, 3);
     return {
@@ -161,6 +174,8 @@ Return JSON:
             examples: (Array.isArray(j.examples) ? j.examples : []).map(x => str(x, 120)).filter(Boolean).slice(0, 4),
         },
         tags: tags.length ? tags : ['diligent'],
+        lines: cleanLines(j.lines),
+        linesLang: AI_LANG(),
         bake: Math.round(num(j.bake, 2, 8, 4)),
         serve: Math.round(num(j.serve, 2, 8, 4)),
     };
