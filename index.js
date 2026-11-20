@@ -62,7 +62,7 @@ function bindSettings() {
     const $ = sel => document.querySelector(sel);
     $('#crumble_open_btn')?.addEventListener('click', () => openWindow());
     $('#crumble_lang')?.addEventListener('change', e => { s.lang = e.target.value; resetLang(); save(); redrawSettings(); if (document.querySelector('#crumble-root.open')) render(); });
-    $('#crumble_boss')?.addEventListener('change', e => { s.bossName = e.target.value.trim().slice(0, 30); save(); });
+    $('#crumble_boss')?.addEventListener('change', e => { s.bossName = e.target.value.trim().slice(0, 30); save(); if (document.querySelector('#crumble-root.open') && !businessActive()) render(); });
     $('#crumble_win')?.addEventListener('change', e => { s.winSize = e.target.value; save(); if (document.querySelector('#crumble-root.open')) { applyWinSize(); if (!businessActive()) render(); } });
     $('#crumble_profile')?.addEventListener('change', e => { s.profileId = e.target.value; save(); refreshProfileSelect(); });
     $('#crumble_cardref')?.addEventListener('change', e => { s.cardRef = e.target.value; save(); });

@@ -11,7 +11,7 @@ import {
 } from './rules.js';
 import { faceChip, faceStyle, ICON } from './looks.js';
 import { createScene } from './scene.js';
-import { awayJournal, makeManual, FALLBACK_KEYS } from './ai.js';
+import { awayJournal, makeManual, FALLBACK_KEYS, bossLabel } from './ai.js';
 import { line, tapLine } from './lines.js';
 import { renderBusiness, resumeIfNeeded, businessActive, pauseBusiness } from './screens.js';
 import { renderEnding } from './ending.js';
@@ -275,7 +275,7 @@ function staffSub(s, b) {
             return others.map(o => {
                 const r = o.id === 'boss' ? rel('boss', s.id) : rel(s.id, o.id);
                 const face = o.id === 'boss' ? `<span class="cr-face boss">👑</span>` : faceChip(o.id, 30);
-                const nm = o.id === 'boss' ? L('사장님', 'Boss') : book(o.id)?.name;
+                const nm = o.id === 'boss' ? bossLabel() : book(o.id)?.name;
                 return `<div class="cr-relrow">${face}<div style="flex:1"><div class="cr-row"><b>${esc(nm)}</b>${heartRow(r.v)}<span class="cr-muted">${r.v}</span></div>${r.memo ? `<p class="cr-muted">${esc(r.memo)}</p>` : ''}</div></div>`;
             }).join('') || `<p class="cr-muted">${L('아직 관계가 없어요.', 'No bonds yet.')}</p>`;
         }

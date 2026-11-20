@@ -4,7 +4,7 @@ import { L, F, money, signedMoney } from './i18n.js';
 import { S, G, save, book, staffById, bossRel, rel, newGame } from './state.js';
 import { createScene } from './scene.js';
 import { faceChip } from './looks.js';
-import { endingWords } from './ai.js';
+import { endingWords, bossLabel } from './ai.js';
 import { line } from './lines.js';
 import { render, addScene, closeBtn, heartRow } from './ui.js';
 
@@ -80,7 +80,7 @@ ${best ? `<p class="cr-muted cr-center">${F(L('{d}일째, 손님 {n}명에게 {m
             const pairs = Object.entries(g.rel).filter(([, v]) => v.v || v.memo).slice(0, 8);
             return `<section class="cr-card cr-past"><div class="cr-ttl">🏚 ${L('지난 가게들', 'Past shops')}</div><div class="cr-hist"><b>${esc(g.name)}</b> · ${F(L('{n}일 영업', '{n} days'), { n: g.day })} · ${L('최고 평판', 'Best rep')} ${g.stats.maxRep}</div>${e.bossWords ? `<p class="cr-say">👑 “${esc(e.bossWords)}”</p>` : ''}</section>
 <section class="cr-card"><label class="cr-switch"><span>${L('지난 관계 이어가기', 'Carry over relationships')}</span><button type="button" role="switch" aria-checked="${e.carry}" class="cr-sw${e.carry ? ' on' : ''}" data-e="carry"><i></i></button></label>
-${e.carry ? `<div class="cr-muted">${pairs.map(([k, v]) => { const [a, b] = k.split('|'); const nm = x => x === 'boss' ? L('사장님', 'Boss') : book(x)?.name || '?'; return `<div class="cr-hist">${esc(nm(a))} ↔ ${esc(nm(b))} · ${v.v}${v.memo ? ' — ' + esc(v.memo) : ''}</div>`; }).join('') || L('이어갈 관계가 없어요.', 'Nothing to carry over.')}</div><p class="cr-note">${L('관계가 이어져도 게임이 쉬워지지는 않아요.', 'Carried bonds don\'t make the game easier.')}</p>` : ''}</section>`;
+${e.carry ? `<div class="cr-muted">${pairs.map(([k, v]) => { const [a, b] = k.split('|'); const nm = x => x === 'boss' ? bossLabel() : book(x)?.name || '?'; return `<div class="cr-hist">${esc(nm(a))} ↔ ${esc(nm(b))} · ${v.v}${v.memo ? ' — ' + esc(v.memo) : ''}</div>`; }).join('') || L('이어갈 관계가 없어요.', 'Nothing to carry over.')}</div><p class="cr-note">${L('관계가 이어져도 게임이 쉬워지지는 않아요.', 'Carried bonds don\'t make the game easier.')}</p>` : ''}</section>`;
         }
     }
     return '';

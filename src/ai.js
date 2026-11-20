@@ -3,7 +3,7 @@
 import { ctx, parseJsonLoose, str, num } from './util.js';
 import { S, G, book, staffById, rel, menuInfo } from './state.js';
 import { EVENT_KINDS, TAGS, isImportantKind, WEATHER, roleLabel } from './rules.js';
-import { AI_LANG, isKo } from './i18n.js';
+import { AI_LANG, isKo, L } from './i18n.js';
 
 // 설정의 "사장 이름" → 없으면 페르소나 이름 → 없으면 "사장님"
 const bossName = () => String(S().bossName || '').trim() || ctx().name1 || (isKo() ? '사장님' : 'Boss');
@@ -333,3 +333,10 @@ Return JSON: {"last":{"S1":"..."},"aware":{"S1":"no"},"today":{"S1":"..."},"memo
 }
 
 export { bossName };
+
+/** 화면에 보이는 사장 이름표: 이름이 있으면 "이름 (사장)", 없으면 "사장님" */
+export function bossLabel() {
+    let nm = String(S().bossName || '').trim();
+    if (!nm) { try { nm = ctx().name1 || ''; } catch { nm = ''; } }
+    return nm ? `${nm} (${L('사장', 'Boss')})` : L('사장님', 'Boss');
+}
