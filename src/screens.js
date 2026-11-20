@@ -5,7 +5,7 @@ import { G, S, save, book, staffById, colorOf, bossRel, menuInfo, ING_PRICE, ski
 import {
     prepToday, expectedGuests, ingCost, pickEvents, fallbackEventText, resolveEvent, deltaText, newBiz, sellOne,
     closeDay, worries, finishClose, applyNotices, workingStaff, hasTag, friendSaves, EVENT_KINDS, guestMult,
-    roleLabel, weatherLabel, staffPick, delegateIndex, canDelegate,
+    roleLabel, weatherLabel, staffPick, delegateIndex, canDelegate, pickReason, deltaChips, tagLabel,
 } from './rules.js';
 import { createScene } from './scene.js';
 import { faceChip } from './looks.js';
@@ -173,19 +173,30 @@ async function startMorningAI(g) {
     if (G() !== g || g.today !== t) return;
     if (r) {
         t.lines = r.lines;
-        t.events.forEach((ev, i) => {
-            const x = r.texts[i]; if (!x || ev.shown) return;
-            const fb = fallbackEventText(ev);
-            ev.text = {
-                title: x.title || fb.title, situation: x.situation || fb.situation, guest: x.guest ?? fb.guest, staff: x.staff || fb.staff,
-                choices: fb.choices.map((c, ci) => ({ label: x.choices[ci]?.label || c.label, line: x.choices[ci]?.line || '', interfere: !!x.choices[ci]?.interfere, effects: x.choices[ci]?.effects || null })),
-            };
-        });
+        fillTexts(t.events, r.texts, true);
         t.aiDone = true;
     } else t.aiError = true;
     save();
     t.onAi?.();
 }
+
+/** AI가 써 준 사건 글 채우기 (이미 열어 본 사건은 그대로) */
+function fillTexts(events, texts, skipShown = false) {
+    events.forEach((ev, i) => {
+        const x = texts?.[i]; if (!x || ev.done || (skipShown && ev.shown)) return;
+        if (B?.sheetEv === ev) return;
+        const fb = fallbackEventText(ev);
+        ev.text = {
+            title: x.title || fb.title, situation: x.situation || fb.situation, guest: x.guest ?? fb.guest, staff: x.staff || fb.staff,
+            choices: fb.choices.map((c, ci) => ({ label: x.choices[ci]?.label || c.label, line: x.choices[ci]?.line || '', result: x.choices[ci]?.result || '', resultBad: x.choices[ci]?.resultBad || '', interfere: !!x.choices[ci]?.interfere, effects: x.choices[ci]?.effects || null })),
+        };
+    });
+}
+const agoText = m => (m >= 90 ? F(L('{n}시간 전', '{n}h ago'), { n: Math.round(m / 60) }) : F(L('{n}분 전', '{n} min ago'), { n: Math.max(1, Math.round(m)) }));
+/** 이름 뒤 "이/가" */
+export const iga = n => { const c = String(n || '').trim().slice(-1).charCodeAt(0); if (!(c >= 0xAC00 && c <= 0xD7A3)) return L('가', ''); return L((c - 0xAC00) % 28 ? '이' : '가', ''); };
+/** 영업 중 창을 오래 닫아 뒀을 때: 밀린 일 쌓기 (몇 개 쌓였는지 돌려줌) */
+export function addBacklog(minutes) { return B?.addBacklog ? B.addBacklog(minutes) : 0; }
 
 // ======================= ② 영업 중 =======================
 function openScreen(box) {
@@ -200,6 +211,7 @@ function openScreen(box) {
 <main class="cr-main" data-biz>
 <div class="cr-pauseBand" role="status"><span>⏸ ${L('가게가 멈춰 있어요', 'The shop is paused')}</span><button type="button" class="cr-pbtn sm" data-b="resume">▶ ${L('다시 시작', 'Resume')}</button></div>
 <div class="cr-sceneHost" id="cr-oScene"></div>
+<section class="cr-card cr-backlog cr-hide" id="cr-backlog"></section>
 <div class="cr-chips" id="cr-chips"></div>
 <section class="cr-card" id="cr-who"></section>
 <p class="cr-muted cr-center">${L('직원을 눌러 보세요 · [찾기]를 누르면 그 직원 쪽으로 확대돼요', 'Tap staff · [Find] zooms to them')}</p>
@@ -207,7 +219,8 @@ function openScreen(box) {
     const host = box.querySelector('#cr-oScene');
     const lay = (() => { const s = createScene(host, { size: g.size, height: 360, zoom: .85, focus: [6, 3], zoomKey: 'open' }); addScene(s); return s; })();
     const sc = lay;
-    B = { sc, host, biz, running: true, queue: [], guests: [], shelf: 0, counterBy: null, ovenBy: null, active: null, wait: 0, elapsed: 0, ents: {} };
+    B = { sc, host, biz, running: true, queue: [], guests: [], shelf: 0, counterBy: null, ovenBy: null, active: null, wait: 0, elapsed: 0, ents: {},
+        backlog: [], sheetEv: null, results: [], resultOpen: false, holdPause: false };
     const L0 = sc.lay;
     const W = workingStaff(g);
     const doing = {};
@@ -237,7 +250,7 @@ function openScreen(box) {
         const spot = s.role === 'bake' ? L0.spots.oven : s.role === 'serve' || s.role === 'all' ? L0.spots.counter : L0.idle[0];
         const e = sc.ent({
             staffId: s.id, label: book(s.id)?.name, c: spot[0], r: spot[1],
-            onTap: e => { if (e.alerted) { openEvent(); return; } sc.jump(e); sc.say(e, tapLine(s.id)); },
+            onTap: e => { if (e.alerted) { openEvent(pendingFor(s.id)); return; } sc.jump(e); sc.say(e, tapLine(s.id)); },
         });
         B.ents[s.id] = e;
     }
@@ -263,7 +276,7 @@ function openScreen(box) {
             const pBurn = .2 - s.bake * .018 + (hasTag(s.id, 'clumsy') ? .08 : 0) + ((s.mood ?? 60) < 35 ? .06 : 0) + ((s.fatigue ?? 30) > 75 ? .05 : 0);
             if (chance(Math.max(.02, pBurn))) {
                 const helper = friendSaves(g, biz, s.id);
-                if (helper) { sc.say(B.ents[helper] || e, L('잠깐! 내가 볼게!', 'Wait! I\'ve got it!'), 2200); sc.emo(e, 'heart'); toast(F(L('{a}가 {b}의 실수를 막아 줬어요', '{a} saved {b}\'s batch'), { a: book(helper)?.name, b: book(s.id)?.name })); }
+                if (helper) { sc.say(B.ents[helper] || e, line(helper, 'rescue'), 2200); sc.emo(e, 'heart'); toast(F(L('{a}가 {b}의 실수를 막아 줬어요', '{a} saved {b}\'s batch'), { a: book(helper)?.name, b: book(s.id)?.name })); }
                 else { biz.burnt++; g.ing = Math.max(0, g.ing - 1); sc.emo(e, 'sweat'); sc.say(e, line(s.id, 'mistake'), 2200); setDoing(s, L('오븐 앞 · 태움', 'Oven · burnt it')); await sc.wait(1400); B.ovenBy = null; chips(); return true; }
             }
             const batch = Math.min(3, g.ing); g.ing -= batch; biz.baked += batch;
@@ -293,8 +306,9 @@ function openScreen(box) {
             if (B.shelf > 0) {
                 B.shelf--; sc.display(B.shelf); sellOne(g, biz); sc.emo(q.e, 'bag'); q.done = 'ok';
                 const freebie = hasTag(s.id, 'kind', 'flatterer', 'chatty') ? .14 : .03;
-                if (B.shelf > 0 && chance(freebie)) { B.shelf--; sc.display(B.shelf); sc.emo(e, 'note'); sc.say(e, L('하나 서비스예요~', 'This one\'s on the house~'), 1600); }
-                else if (chance(.25)) sc.say(e, L('감사합니다~', 'Thank you~'), 1200);
+                // 덤·인사도 그 직원 말투로 (말투 대사가 없으면 아이콘만)
+                if (B.shelf > 0 && chance(freebie)) { B.shelf--; sc.display(B.shelf); sc.emo(e, 'note'); sc.say(e, line(s.id, 'freebie'), 1600); setTimeout(() => { if (e.icon === 'note') sc.emo(e, null); }, 1800); }
+                else if (chance(.25)) sc.say(e, line(s.id, 'thanks'), 1200);
                 if (hasTag(s.id, 'prickly') && chance(.15)) { g.rep = clamp(g.rep - .5, 0, 100); sc.emo(q.e, 'sweat'); }
             } else {
                 q.done = 'soldout'; biz.soldout++; g.rep = clamp(g.rep - 1, 0, 100); sc.say(q.e, L('다 팔렸네…', 'All sold out…'), 1800); sc.emo(q.e, 'sweat');
@@ -439,40 +453,119 @@ function openScreen(box) {
     };
 
     // ---------- 사건 ----------
-    const openEvent = () => {
-        const ev = B.active; if (!ev) return;
+    // B.active = 지금 "!"가 떠 있는 사건 / B.backlog = 자리 비운 동안 밀린 일 / B.sheetEv = 지금 창이 열린 사건
+    const pendingFor = id => B.backlog.find(x => x.staffIds[0] === id) || (B.active?.staffIds[0] === id ? B.active : null) || B.active || B.backlog[0];
+    const refreshAlerts = () => {
+        for (const s of W) {
+            const e = B.ents[s.id]; if (!e) continue;
+            const on = B.backlog.some(x => x.staffIds[0] === s.id) || B.active?.staffIds[0] === s.id;
+            if (!!e.alerted !== on) sc.alert(e, on);
+        }
+    };
+    // 창을 닫은 뒤: 직접 멈췄거나 밀린 일이 있으면 "멈춤" 띠, 아니면 다시 움직임
+    const afterSheet = () => { if (B.holdPause) pauseBusiness(true, true); else pauseBusiness(false); };
+    const openEvent = (ev = B.active) => {
+        if (!ev || B.resultOpen) return;
+        B.sheetEv = ev;
         pauseBusiness(true, false);
         const tx = ev.text || fallbackEventText(ev);
         const k = EVENT_KINDS[ev.kind];
         const sid = ev.staffIds[0];
-        openSheet(`<div class="cr-row"><span class="cr-evTag ${k.cat}">${esc(tx.title)}</span><span class="cr-muted" style="margin-left:auto">${F(L('{n} 담당', '{n} handling'), { n: book(sid)?.name })}</span></div>
+        openSheet(`<div class="cr-row"><span class="cr-evTag ${k.cat}">${esc(tx.title)}</span><span class="cr-muted" style="margin-left:auto">${ev.backlog ? `${agoText(ev.ago)} · ` : ''}${F(L('{n} 담당', '{n} handling'), { n: book(sid)?.name })}</span></div>
 <p class="cr-situ">${esc(tx.situation)}</p>
 ${tx.guest ? `<div class="cr-say2"><span class="cr-face guest">🙂</span><p>${esc(tx.guest)}</p></div>` : ''}
 ${ev.staffIds.map((id, i) => (i === 0 && tx.staff) ? `<div class="cr-say2">${faceChip(id, 30)}<p>${esc(tx.staff)}</p></div>` : '').join('')}
 ${tx.choices.map((c, i) => (i === delegateIndex(ev) && canDelegate(ev)) ? '' : `<button type="button" class="cr-opt" data-b="opt" data-i="${i}">${esc(c.label)}</button>`).join('')}
 ${canDelegate(ev) ? `<button type="button" class="cr-opt cr-optDel" data-b="delegate">🤝 ${F(L('{n}에게 맡기기', 'Leave it to {n}'), { n: book(sid)?.name })}<small>${L('성격대로 알아서 해요', 'They\'ll do it their own way')}</small></button>` : ''}
 <div class="cr-actions"><button type="button" class="cr-btn" data-b="later">${L('나중에 보기', 'Later')}</button></div>
-<p class="cr-muted cr-center">${L('나중에 봐도 "!"는 남아 있어요. 너무 오래 두면 직원이 알아서 해요.', 'The "!" stays. Leave it too long and they\'ll handle it themselves.')}</p>`, true);
+<p class="cr-muted cr-center">${ev.backlog ? L('나중에 봐도 밀린 일 목록에 남아 있어요.', 'It stays in the backlog list.') : L('나중에 봐도 "!"는 남아 있어요. 너무 오래 두면 직원이 알아서 해요.', 'The "!" stays. Leave it too long and they\'ll handle it themselves.')}</p>`, true);
     };
     // 사건 창 닫기 (사건은 그대로 남음, 가게는 다시 움직임)
-    const laterEvent = () => { if (!B?.active) return; closeSheet(); pauseBusiness(false); };
+    const laterEvent = () => { if (!B?.sheetEv) return; B.sheetEv = null; closeSheet(); afterSheet(); };
     // mode: false = 사장님이 고름 / 'delegate' = 맡김 / 'auto' = 오래 안 봐서 직원이 알아서
-    const finishEvent = (ci, mode) => {
-        const ev = B.active; if (!ev) return;
+    const finishEvent = (ci, mode, ev = B.sheetEv || B.active) => {
+        if (!ev || ev.done) return;
         const byStaff = mode === 'delegate' || mode === 'auto';
         if (byStaff) ci = staffPick(g, ev);
-        const res = resolveEvent(g, ev, ci, biz, byStaff);
-        closeSheet(); pauseBusiness(false);
-        for (const id of ev.staffIds) { const e = B.ents[id]; if (e) sc.alert(e, false); }
+        const n0 = (biz.expLog || []).length;
+        const res = resolveEvent(g, ev, ci, biz, mode || false);
+        const exp = (biz.expLog || []).length > n0 ? biz.expLog[biz.expLog.length - 1] : null;
+        if (B.sheetEv === ev) B.sheetEv = null;
+        if (B.active === ev) { B.active = null; B.wait = 0; }
+        if (ev.backlog) B.backlog = B.backlog.filter(x => x !== ev);
+        refreshAlerts();
         const e = B.ents[ev.staffIds[0]];
         if (e) { sc.emo(e, res.interfere ? 'note' : res.ok ? 'heart' : 'sweat'); if (res.line) sc.say(e, res.line, 3200); }
-        const dt = deltaText(res.delta);
-        const picked = (ev.text || fallbackEventText(ev)).choices[ci]?.label || '';
-        const head = mode === 'auto' ? L('사장님이 안 봐서 알아서 했어요', 'You didn\'t look, so they handled it') : mode === 'delegate' ? F(L('{n}에게 맡겼어요', 'Left it to {n}'), { n: book(ev.staffIds[0])?.name }) : '';
-        toast((head ? `${head}${picked && delegateIndex(ev) !== ci ? ` (${picked})` : ''} · ` : '') + (res.interfere ? L('성격이 끼어들었어요 · ', 'Personality got in the way · ') : '') + (dt || L('별일 없이 지나갔어요', 'Nothing much changed')), 3200);
-        B.active = null; B.wait = 0;
         if (ev.kind === 'inspection' && ci === 1) { stains.length = 0; sc.setStains(stains); }
-        chips(); save();
+        chips(); drawBacklog(); save();
+        B.results.push({ ev, ci, mode, res, exp });
+        showResult(); // 이미 열려 있으면 "남은 결과" 수만 새로
+    };
+    // ---------- 결과 창: 누가 · 뭘 해서 · 어떻게 됐는지 ----------
+    const showResult = () => {
+        const r = B.results[0];
+        if (!r) { B.resultOpen = false; closeSheet(); afterSheet(); return; }
+        B.resultOpen = true;
+        pauseBusiness(true, false);
+        const { ev, ci, mode, res, exp } = r;
+        const k = EVENT_KINDS[ev.kind];
+        const tx = ev.text || fallbackEventText(ev);
+        const sid = ev.staffIds[0], nm = book(sid)?.name || '';
+        const label = tx.choices[ci]?.label || L(...k.choices[ci].label);
+        const slide = mode === 'auto' && k.cat === 'staff';
+        const modeTag = mode === 'delegate' ? L('맡긴 결과', 'Delegated') : mode === 'auto' ? L('알아서 한 결과', 'Handled by staff') : L('사장님 결정', 'Your call');
+        const note = mode === 'auto' ? (slide ? L('사장님이 안 봐서 그냥 넘어갔어요', 'You didn\'t look, so it slid by') : F(L('사장님이 안 봐서 {n} 알아서 했어요', 'You didn\'t look, so {n} handled it'), { n: nm + iga(nm) })) : '';
+        const why = byStaffWhy(mode) ? pickReason(ev, ci, mode) : (res.interfere ? L('성격이 끼어들어서 시킨 대로만 하진 않았어요.', 'Their personality got in the way of doing exactly as told.') : '');
+        const badge = res.interfere ? `<span class="cr-ok wild">${L('제멋대로', 'Their own way')}</span>`
+            : res.uncertain ? (res.ok ? `<span class="cr-ok good">${L('잘 해냈어요', 'Went well')}</span>` : `<span class="cr-ok bad">${L('잘 안 됐어요', 'Didn\'t go well')}</span>`)
+                : slide ? `<span class="cr-ok">${L('넘어감', 'Let slide')}</span>` : '';
+        const main = res.result ? esc(res.result) : `<b>${esc(nm)}</b> · ${esc(label)}`;
+        const chipsHtml = deltaChips(res.delta || {}, ev, exp).map(c => `<span class="cr-chip ${c.good ? 'up' : 'dn'}">${esc(c.t)}</span>`).join('') || `<span class="cr-chip">${L('별일 없이 지나갔어요', 'Nothing much changed')}</span>`;
+        const more = B.results.length > 1 ? `<span class="cr-muted">${F(L('남은 결과 {n}', '{n} more'), { n: B.results.length - 1 })}</span>` : '';
+        openSheet(`<div class="cr-row"><span class="cr-evTag ${k.cat}">${esc(tx.title)}</span><span class="cr-resTag ${mode || 'boss'}">${modeTag}</span></div>
+${note ? `<div class="cr-resNote">${note}</div>` : ''}
+<div class="cr-resWho">${ev.staffIds.map((id, i) => faceChip(id, i ? 30 : 40)).join('')}<div><b>${esc(nm)}</b>${ev.staffIds[1] ? ` <span class="cr-muted">· ${esc(book(ev.staffIds[1])?.name || '')}</span>` : ''}<div class="cr-tags">${(book(sid)?.tags || []).map(t => `<span class="cr-tag">${esc(tagLabel(t))}</span>`).join('')}</div></div></div>
+<div class="cr-story"><p class="cr-resMain">${main}</p>${why ? `<p class="cr-why">${esc(why)}</p>` : ''}${badge || res.result ? `<p class="cr-resRow">${badge}${res.result ? `<span class="cr-muted">${L('고른 것', 'Choice')}: ${esc(label)}</span>` : ''}</p>` : ''}</div>
+${res.line ? `<div class="cr-say2">${faceChip(sid, 30)}<p>${esc(res.line)}</p></div>` : ''}
+<div class="cr-chips">${chipsHtml}</div>
+<button type="button" class="cr-pbtn cr-wide" data-b="resOk">${B.results.length > 1 ? L('확인 · 다음 결과', 'OK · next') : L('확인', 'OK')}</button>
+<p class="cr-muted cr-center">${more}${more ? ' · ' : ''}${L('확인을 누르면 가게가 다시 움직여요 · 일지에도 남아요', 'The shop moves again after OK · saved to the log')}</p>`, true);
+    };
+    const byStaffWhy = mode => mode === 'delegate' || mode === 'auto';
+    const resultOk = () => { B.results.shift(); if (B.results.length) showResult(); else { B.resultOpen = false; closeSheet(); afterSheet(); } };
+
+    // ---------- 자리 비운 동안 밀린 일 ----------
+    const drawBacklog = () => {
+        const el = box.querySelector('#cr-backlog'); if (!el) return;
+        el.classList.toggle('cr-hide', !B.backlog.length);
+        if (!B.backlog.length) { el.innerHTML = ''; return; }
+        el.innerHTML = `<div class="cr-row"><b>${L('자리 비운 동안 밀린 일이 있어요', 'Things piled up while you were away')}</b><span class="cr-evTag guest" style="margin-left:auto">${B.backlog.length}/3</span></div>
+<p class="cr-muted">${L('가게 시간은 그대로예요. 일만 쌓였어요.', 'Shop time didn\'t move. Only the work piled up.')}</p>
+${B.backlog.map(x => `<div class="cr-whoRow">${faceChip(x.staffIds[0], 28)}<span class="cr-blT"><b>${esc((x.text || fallbackEventText(x)).title)}</b> <span class="cr-muted">· ${agoText(x.ago)}</span></span><button type="button" class="cr-find" data-b="blOpen" data-id="${esc(x.id)}">${L('보기', 'View')}</button></div>`).join('')}
+<button type="button" class="cr-opt cr-optDel cr-center" data-b="blAll">🤝 ${L('전부 직원에게 맡기기', 'Leave them all to the staff')}</button>`;
+    };
+    B.addBacklog = minutes => {
+        const th = +S().backlogMinutes || 0;
+        if (!th || minutes < th || !B.running) return 0;
+        const want = Math.min(3, Math.floor(minutes / th)) - B.backlog.length;
+        if (want <= 0) return 0;
+        const used = new Set([...t.events, ...B.backlog].map(x => x.kind));
+        const picks = pickEvents(g, 'direct', want + 4).filter(x => !used.has(x.kind) && !EVENT_KINDS[x.kind].early).slice(0, want);
+        if (!picks.length) return 0;
+        picks.forEach((x, i) => { x.backlog = true; x.shown = true; x.ago = Math.max(1, Math.round(minutes * (1 - i / picks.length))); x.text = fallbackEventText(x); });
+        B.backlog.push(...picks);
+        B.holdPause = true;
+        pauseBusiness(true, true);
+        refreshAlerts(); drawBacklog(); save();
+        // 사건 글만 AI로 (말풍선은 아침 것 그대로)
+        (async () => {
+            let r = null;
+            try { r = await morningPrep(g, picks, false); } catch (err) { console.warn(err); }
+            if (!r || !B || B.biz !== biz) return;
+            fillTexts(picks, r.texts);
+            drawBacklog();
+        })();
+        return picks.length;
     };
 
     // ---------- 시계 ----------
@@ -503,9 +596,9 @@ ${canDelegate(ev) ? `<button type="button" class="cr-opt cr-optDel" data-b="dele
                         sc.alert(e, true); sc.emo(e, 'sweat'); sc.focus(e, 1.3);
                         e.el.setAttribute('aria-label', F(L('{n} — 사건 발생, 눌러서 보기', '{n} — something happened, tap to see'), { n: book(ev.staffIds[0])?.name }));
                     }
-                } else {
+                } else if (!B.sheetEv) {
                     B.wait += 250;
-                    if (B.wait > Math.max(20000, D * .1)) finishEvent(0, 'auto');
+                    if (B.wait > Math.max(20000, D * .1)) finishEvent(0, 'auto', B.active);
                 }
                 if (tt >= 1 && !B.active && (B.guests.length === 0 || tt >= 1.12)) { await finish(); return; }
             }
@@ -515,6 +608,9 @@ ${canDelegate(ev) ? `<button type="button" class="cr-opt cr-optDel" data-b="dele
         B.running = false;
         biz.finished = true;
         biz.shelfLeft = B.shelf;
+        // 끝까지 안 본 밀린 일은 직원이 알아서 (결과는 일지에)
+        for (const x of B.backlog) { try { resolveEvent(g, x, staffPick(g, x), biz, 'auto'); } catch (err) { console.warn(err); } }
+        B.backlog = [];
         t.events.filter(x => !x.done).forEach(x => (x.done = { skipped: true }));
         sc.setEnv({ tod: 'eve', weather: g.weather }); sc.sign('CLOSED');
         toast(L('저녁 8시, 영업 끝!', '8 PM — closing time!'), 1800);
@@ -528,16 +624,20 @@ ${canDelegate(ev) ? `<button type="button" class="cr-opt cr-optDel" data-b="dele
     box.addEventListener('click', e => {
         const b = e.target.closest('[data-b]');
         if (b) {
-            if (b.dataset.b === 'find') { const en = B?.ents[b.dataset.id]; if (en) { sc.focus(en, 1.5); sc.say(en, L('저 여기요!', 'Over here!'), 1400); } }
-            if (b.dataset.b === 'resume') pauseBusiness(false);
+            if (b.dataset.b === 'find') { const en = B?.ents[b.dataset.id]; if (en) { sc.focus(en, 1.5); sc.jump(en); sc.say(en, tapLine(b.dataset.id), 1400); } }
+            if (b.dataset.b === 'resume') { B.holdPause = false; pauseBusiness(false); }
+            if (b.dataset.b === 'blOpen') { const x = B.backlog.find(y => y.id === b.dataset.id); if (x) openEvent(x); }
+            if (b.dataset.b === 'blAll') { for (const x of [...B.backlog]) finishEvent(0, canDelegate(x) ? 'delegate' : 'auto', x); }
             return;
         }
         // ⏸ = 그 자리에서 멈추기/다시 시작 (창 닫기는 ✕)
-        if (e.target.closest('.cr-pause')) pauseBusiness(!sc.paused);
+        if (e.target.closest('.cr-pause')) { if (sc.paused) B.holdPause = false; pauseBusiness(!sc.paused); }
     });
     const sheet = document.querySelector('#crumble-root .cr-sheet');
     B.sheetHandler = e => {
-        const b = e.target.closest('[data-b]'); if (!b || !B?.active) return;
+        const b = e.target.closest('[data-b]'); if (!b || !B) return;
+        if (b.dataset.b === 'resOk') { if (B.resultOpen) resultOk(); return; }
+        if (!B.sheetEv || B.resultOpen) return;
         if (b.dataset.b === 'opt') finishEvent(+b.dataset.i, false);
         else if (b.dataset.b === 'delegate') finishEvent(0, 'delegate');
         else if (b.dataset.b === 'later') laterEvent();
@@ -623,7 +723,7 @@ ${diary ? `<p class="cr-diary">“${esc(diary)}”</p>` : (t.diaryError || t.dia
     const L0 = sc.lay;
     for (const s of W) {
         const p = s.role === 'bake' ? L0.spots.display : s.role === 'serve' || s.role === 'all' ? L0.spots.counter : L0.idle[0];
-        ents[s.id] = sc.ent({ staffId: s.id, label: book(s.id)?.name, c: p[0], r: p[1], onTap: e => { sc.jump(e); const d = j?.diaries?.[s.id]; sc.say(e, d ? (d.length > 26 ? d.slice(0, 25) + '…' : d) : tapLine(s.id), 3200); } });
+        ents[s.id] = sc.ent({ staffId: s.id, label: book(s.id)?.name, c: p[0], r: p[1], onTap: e => { sc.jump(e); const d = j?.diaries?.[s.id]; sc.say(e, d || tapLine(s.id), 3200); } });
     }
     (async () => {
         try {

@@ -7,13 +7,13 @@ import {
 } from './state.js';
 import {
     TAGS, catchUp, storeAway, tagLabel, weatherLabel, roleLabel, workingStaff, inboxInfo, decideInbox,
-    fireStaff, assignRoles, nextDayNow, kindTitle, hasTag,
+    fireStaff, assignRoles, nextDayNow, kindTitle, hasTag, shortAway,
 } from './rules.js';
 import { faceChip, faceStyle, ICON } from './looks.js';
 import { createScene } from './scene.js';
 import { awayJournal, makeManual, FALLBACK_KEYS, bossLabel, remakeLines, cardExampleLines } from './ai.js';
 import { line, tapLine } from './lines.js';
-import { renderBusiness, resumeIfNeeded, businessActive, pauseBusiness, bizPaused } from './screens.js';
+import { renderBusiness, resumeIfNeeded, businessActive, pauseBusiness, bizPaused, addBacklog } from './screens.js';
 import { fieldsHtml, bindFields, onSettings, personaName, setBossName } from './settings.js';
 import { renderEnding } from './ending.js';
 
@@ -79,6 +79,36 @@ window.addEventListener('resize', () => {
     resizeT = setTimeout(() => { const win = root?.querySelector('.cr-win'); const before = win?.className; applyWinSize(); if (win && win.className !== before && !businessActive()) render(); }, 300);
 });
 
+// ---------- 사장님이 자리를 비운 시간 ----------
+// 창을 보고 있는 동안 1분마다 "마지막으로 본 때"를 적어 둔다 (기기 저장소 — 설정 파일을 자꾸 저장하지 않게).
+// 창을 닫을 때는 게임 저장에도 남김.
+const seenKey = () => 'crumble_seenAt_' + (G()?.id || '');
+function markSeen(persist = false) {
+    const g = G(); if (!g) return;
+    const now = Date.now();
+    try { localStorage.setItem(seenKey(), String(now)); } catch { /* 저장소를 못 써도 괜찮음 */ }
+    if (persist) { g.seenAt = now; save(); }
+}
+function minutesAway() {
+    const g = G(); if (!g) return 0;
+    let t = +g.seenAt || 0;
+    try { t = Math.max(t, +localStorage.getItem(seenKey()) || 0); } catch { /* */ }
+    return t ? Math.max(0, (Date.now() - t) / 60000) : 0;
+}
+setInterval(() => { if (view.open && !document.hidden) markSeen(); }, 60000);
+document.addEventListener('visibilitychange', () => {
+    if (!view.open || !root) return;
+    if (document.hidden) { markSeen(); return; }
+    // 창을 열어 둔 채 폰을 잠갔다가 돌아왔을 때도 같은 규칙
+    const away = minutesAway();
+    markSeen();
+    if (businessActive()) { addBacklog(away); return; }
+    if (BIZ.includes(G()?.phase)) return;
+    const days = catchUp();
+    const short = !days && G() ? shortAway(G(), away) : null;
+    if (days || short) { render(); runAway(days || [short]); }
+});
+
 export async function openWindow() {
     mount();
     ensureGame();
@@ -86,10 +116,15 @@ export async function openWindow() {
     fitToScreen();
     applyWinSize();
     view.open = true;
-    if (businessActive()) return; // 멈춰 둔 영업 화면 그대로
+    const away = minutesAway();
+    markSeen();
+    if (businessActive()) { addBacklog(away); return; } // 멈춰 둔 영업 화면 그대로 (오래 비웠으면 밀린 일)
     const days = catchUp();
+    // 날이 안 바뀌었어도 창을 오래 닫아 뒀으면 작은 일 몇 개 (문 열기 전·마감 후만)
+    const short = !days ? shortAway(G(), away) : null;
     render();
     if (days) runAway(days);
+    else if (short) runAway([short]);
     resumeIfNeeded();
     // 사장 이름을 한 번도 안 정했으면 한 번만 물어봄 (가게 탭일 때만)
     const g = G();
@@ -99,18 +134,30 @@ export function closeWindow() {
     if (!root) return;
     root.classList.remove('open');
     view.open = false;
+    markSeen(true);
     if (businessActive()) { bizAutoPaused = false; pauseBusiness(true); return; } // 장면은 그대로 두고 멈춤 (다시 열면 "멈춤" 띠)
     killScenes();
 }
 
+// 잠깐 비운 일지는 AI를 하루 3번까지만 (넘으면 기본 글)
+function awayAiQuota() {
+    const g = G(), k = dayKey();
+    if (g.awayAI?.key !== k) g.awayAI = { key: k, n: 0 };
+    if (g.awayAI.n >= 3) return false;
+    g.awayAI.n++; save();
+    return true;
+}
 async function runAway(days) {
     if (awayBusy) return;
     awayBusy = true;
-    G().away = { days: days.map(d => d.day), events: [], loading: true, seen: false };
+    const short = !!days[0]?.short;
+    const prev = G().away;
+    // 잠깐 비운 거면 아직 안 본 지난 일은 남겨 둔 채로 "쓰는 중"
+    G().away = short && prev && !prev.seen && !prev.loading ? { ...prev, loading: true } : { days: days.map(d => d.day), events: [], loading: true, seen: false };
     render();
     let texts = null;
-    try { texts = await awayJournal(days); } catch (e) { console.warn(e); }
-    storeAway(days, texts);
+    if (!short || awayAiQuota()) { try { texts = await awayJournal(days); } catch (e) { console.warn(e); } }
+    storeAway(days, texts, short ? prev : null);
     awayBusy = false;
     if (view.open && !businessActive()) softRender();
 }
@@ -380,7 +427,7 @@ ${(p.reviews || []).map(r => `<div class="cr-hist"><b>${esc(r.name)}</b> ${esc(r
 ${p.bossWords ? `<p class="cr-say">👑 “${esc(p.bossWords)}”</p>` : ''}</section>`).join('');
     }
     if (!g.journal.length) return h + `<p class="cr-muted cr-center">${L('아직 기록이 없어요. 첫 영업을 시작해 보세요!', 'Nothing yet. Open the shop for the first time!')}</p>`;
-    return h + g.journal.map(j => `<section class="cr-card cr-jday ${j.mode}"><div class="cr-ttl"><span class="cr-pill day sm">${F(L('{n}일째', 'Day {n}'), { n: j.day })}</span>${j.mode === 'auto' ? L('사장님 없음', 'Boss away') : L('직접 영업', 'You ran it')}<small>${weatherLabel(j.weather)}</small></div>
+    return h + g.journal.map(j => `<section class="cr-card cr-jday ${j.mode}"><div class="cr-ttl"><span class="cr-pill day sm">${F(L('{n}일째', 'Day {n}'), { n: j.day })}</span>${j.mode === 'auto' ? (j.short ? F(L('사장님 잠깐 없음 · {t}', 'Boss stepped out · {t}'), { t: j.short >= 90 ? F(L('약 {n}시간', '~{n}h'), { n: Math.round(j.short / 60) }) : F(L('약 {n}분', '~{n} min'), { n: j.short }) }) : L('사장님 없음', 'Boss away')) : L('직접 영업', 'You ran it')}<small>${weatherLabel(j.weather)}</small></div>
 ${(j.events || []).map(e => `<div class="cr-hist">${e.staffId && book(e.staffId) ? nameTag(e.staffId) : ''}<b>${esc(e.title)}</b>${e.text ? ' — ' + esc(e.text) : ''}</div>`).join('') || `<p class="cr-muted">${L('조용한 하루', 'A quiet day')}</p>`}
 ${j.diaries && Object.keys(j.diaries).length ? Object.entries(j.diaries).map(([id, d]) => `<div class="cr-hist">${book(id) ? nameTag(id) : ''}<i>“${esc(d)}”</i></div>`).join('') : ''}
 <div class="cr-jsum">${L('돈', 'Money')} ${signedMoney(j.delta?.money || 0)} · ${L('평판', 'Rep')} ${(j.delta?.rep || 0) >= 0 ? '+' : ''}${j.delta?.rep || 0} · ${L('경험', 'EXP')} +${j.delta?.exp || 0}</div></section>`).join('');
@@ -587,6 +634,7 @@ function lineKeyLabel(k) {
         buyMore: L('재료를 많이 샀을 때', 'Bought lots'), buyLess: L('재료를 적게 샀을 때', 'Bought little'), busy: L('손님 많을 때', 'Busy'),
         soldout: L('다 팔렸을 때', 'Sold out'), mistake: L('실수했을 때', 'Mistake'), sneak: L('몰래 먹다 걸렸을 때', 'Caught snacking'),
         chat: L('손님과 수다', 'Chatting'), clean: L('청소할 때', 'Cleaning'), tired: L('피곤할 때', 'Tired'),
+        thanks: L('팔고 나서 인사', 'After a sale'), freebie: L('몰래 덤 줄 때', 'Slipping a freebie'), rescue: L('동료 실수 막을 때', 'Saving a coworker'),
         tap1: L('눌렀을 때 1', 'Tapped 1'), tap2: L('눌렀을 때 2', 'Tapped 2'), tap3: L('눌렀을 때 3', 'Tapped 3'),
     }[k] || k;
 }
@@ -612,7 +660,7 @@ function editManual() {
 ${fields.map(([k, ko, en]) => `<label class="cr-field">${L(ko, en)}<textarea class="cr-input" data-m="${k}" rows="3">${esc(mn[k] || '')}</textarea></label>`).join('')}
 <label class="cr-field">${L('예시 대사 (줄마다 하나)', 'Example lines (one per line)')}<textarea class="cr-input" data-m="examples" rows="3">${esc((mn.examples || []).join('\n'))}</textarea></label>
 <div class="cr-field">${L('성격 태그 (1~3개)', 'Personality tags (1–3)')}<div class="cr-tags cr-tagPick">${Object.keys(TAGS).map(t => `<button type="button" class="cr-tag${tags.includes(t) ? ' on' : ''}" data-tag="${t}" aria-pressed="${tags.includes(t)}">${esc(tagLabel(t))}</button>`).join('')}</div><small class="cr-muted">${L('태그는 오늘 일어날 사건과 가게 안에서 돌아다니는 모습에만 쓰여요. 대사는 설명서를 따라요.', 'Tags only pick events and how they move around the shop. Lines follow the manual.')}</small></div>
-${b.lines && Object.keys(b.lines).length ? `<label class="cr-field">${L('기본 말풍선 (AI가 응답하지 않을 때)', 'Fallback bubbles (when the AI doesn\'t answer)')}${FALLBACK_KEYS.map(k => `<span class="cr-lineEdit"><small class="cr-muted">${esc(lineKeyLabel(k))}</small><input class="cr-input" data-l="${k}" maxlength="60" value="${esc(b.lines[k] || '')}" placeholder="${esc(L('비우면 공통 대사', 'Blank = common line'))}"></span>`).join('')}</label>` : ''}
+${b.lines && Object.keys(b.lines).length ? `<label class="cr-field">${L('기본 말풍선 (AI가 응답하지 않을 때)', 'Fallback bubbles (when the AI doesn\'t answer)')}${FALLBACK_KEYS.map(k => `<span class="cr-lineEdit"><small class="cr-muted">${esc(lineKeyLabel(k))}</small><input class="cr-input" data-l="${k}" maxlength="100" value="${esc(b.lines[k] || '')}" placeholder="${esc(L('비우면 공통 대사', 'Blank = common line'))}"></span>`).join('')}</label>` : ''}
 <div class="cr-actions"><button class="cr-btn" type="button" data-act="modalClose">${L('취소', 'Cancel')}</button><button class="cr-pbtn sm" type="button" data-act="manualOk">${L('저장', 'Save')}</button></div>`);
     m.querySelector('[data-x="cardEx"]').onclick = e => {
         e.stopPropagation();

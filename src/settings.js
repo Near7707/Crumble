@@ -75,7 +75,14 @@ export function fieldsHtml(scope) {
         lab('minutes', `${L('영업 시간 길이 (분)', 'Business length (minutes)')}: <span data-s-val="businessMinutes">${s.businessMinutes}</span>`) +
         `<input id="${id('minutes')}" data-s="businessMinutes" type="range" min="2" max="8" step="1" value="${s.businessMinutes}"${game ? ' class="cr-sRange"' : ''}>` +
         (game ? note(L('영업 중에 바꾸면 다음 영업부터 적용돼요.', 'Changes during business apply from the next day.')) : '') +
-        check('skipWait', L('기다리지 않고 바로 다음 날 영업하기', 'Allow skipping to the next day without waiting'));
+        check('skipWait', L('기다리지 않고 바로 다음 날 영업하기', 'Allow skipping to the next day without waiting')) +
+        group(L('🌙 사장님 없을 때', '🌙 While you\'re away')) +
+        lab('away', L('일지가 쌓이기 시작하는 시간', 'Away log starts after')) +
+        `<select id="${id('away')}" data-s="awayMinutes" class="${sel}">${[[0, L('끔', 'Off')], [15, L('15분', '15 min')], [30, L('30분 (기본)', '30 min (default)')], [60, L('1시간', '1 hour')], [120, L('2시간', '2 hours')]].map(([v, t]) => opt(String(v), String(s.awayMinutes), t)).join('')}</select>` +
+        note(L('창을 닫고 이만큼 지나면 문 열기 전·마감 후에 작은 일이 생겨요. AI는 하루 3번까지만 불러요.', 'After the window is closed this long, small things happen before opening or after closing. The AI is called at most 3 times a day.')) +
+        lab('backlog', L('영업 중 밀린 일이 쌓이는 시간', 'Business backlog starts after')) +
+        `<select id="${id('backlog')}" data-s="backlogMinutes" class="${sel}">${[[0, L('끔', 'Off')], [30, L('30분', '30 min')], [60, L('1시간 (기본)', '1 hour (default)')], [120, L('2시간', '2 hours')]].map(([v, t]) => opt(String(v), String(s.backlogMinutes), t)).join('')}</select>` +
+        note(L('영업 중에 창을 닫고 이만큼 지날 때마다 밀린 일이 하나씩 (최대 3개). 가게 시간은 그대로예요.', 'Each time this passes with the window closed during business, one task piles up (max 3). Shop time stays put.'));
 }
 
 /** 설정 칸 안의 입력들에 바꾸기 연결 */
@@ -91,4 +98,6 @@ export function bindFields(box, scope) {
     on('responseLength', 'change', t => { s.responseLength = Math.max(400, Math.min(8000, +t.value || 1600)); t.value = s.responseLength; });
     on('businessMinutes', 'input', t => { s.businessMinutes = +t.value; box.querySelector('[data-s-val="businessMinutes"]').textContent = t.value; });
     on('skipWait', 'change', t => { s.skipWait = t.checked; });
+    on('awayMinutes', 'change', t => { s.awayMinutes = +t.value || 0; });
+    on('backlogMinutes', 'change', t => { s.backlogMinutes = +t.value || 0; });
 }

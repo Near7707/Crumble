@@ -418,10 +418,13 @@ export function staffPick(g, ev) {
     return best;
 }
 
-export function resolveEvent(g, ev, ci, biz, byStaff = false) {
+/** by: false = 사장님이 고름 / 'delegate' = 맡김 / 'auto' = 안 봐서 직원이 알아서 */
+export function resolveEvent(g, ev, ci, biz, by = false) {
+    const byStaff = !!by;
     const k = EVENT_KINDS[ev.kind];
     const base = k.choices[ci]?.eff || {};
     let ai = ev.text?.choices?.[ci] || {};
+    const tx = ai;
     // 직원이 스스로 고른 거면 "사장님 말을 안 들음"(interfere) 조정은 쓰지 않음
     if (byStaff) ai = { line: ai.line };
     const main = staffById(ev.staffIds[0]);
@@ -458,15 +461,60 @@ export function resolveEvent(g, ev, ci, biz, byStaff = false) {
         else if (biz) biz.mult *= k.effect.mult;
     }
     const line = ai.line || '';
-    ev.done = { ci, line, interfere: !!ai.interfere, delta, ok };
+    // 결과 한 줄 (아침 AI가 미리 써 둔 것: 잘 됐을 때 / 잘 안 됐을 때)
+    const uncertain = !!(base.skillCheck || base.gamble);
+    const result = (uncertain && !ok ? tx.resultBad : tx.result) || '';
+    ev.done = { ci, line, interfere: !!ai.interfere, delta, ok, result, by: by || 'boss' };
     for (const id of ev.staffIds) remember(id, `${ev.text?.title || L(...k.label)} — ${ev.text?.choices?.[ci]?.label || L(...k.choices[ci].label)}`);
-    if (biz) biz.log.push({ kind: ev.kind, staffIds: ev.staffIds, title: ev.text?.title || L(...k.label), choice: ev.text?.choices?.[ci]?.label || L(...k.choices[ci].label), line, delta });
+    if (biz) biz.log.push({ kind: ev.kind, staffIds: ev.staffIds, title: ev.text?.title || L(...k.label), choice: ev.text?.choices?.[ci]?.label || L(...k.choices[ci].label), line, result, by: by || 'boss', delta });
     // 감싸주기 → 며칠 뒤 터짐
     if (ev.kind === 'friends' && ci === 2 && !ok && ev.staffIds.length === 2) {
         g.pending.push({ a: ev.staffIds[0], b: ev.staffIds[1], day: g.day });
         addRel(ev.staffIds[0], ev.staffIds[1], 0, L('실수를 감싸 줬는데 아직 들키지 않음', 'Covered up a mistake — not found out yet'));
     }
-    return { line, interfere: !!ai.interfere, delta, ok };
+    return { line, interfere: !!ai.interfere, delta, ok, uncertain, result, ci };
+}
+
+/** 직원이 고른 이유 한 줄 (성격 태그로) */
+export function pickReason(ev, ci, by) {
+    const k = EVENT_KINDS[ev.kind]; const eff = k?.choices[ci]?.eff || {};
+    if (by === 'auto' && k?.cat === 'staff') return L('사장님이 안 봐서 그냥 넘어갔어요.', 'You didn\'t look, so it just slid by.');
+    const id = ev.staffIds[0];
+    const R = [
+        [['rebel', 'prickly'], ['제 성격대로 제멋대로 정했어요.', 'They did it their own way, as usual.']],
+        [['greedy'], ['돈 되는 쪽부터 따졌어요.', 'They went for whatever pays.']],
+        [['lazy'], ['손이 덜 가는 쪽을 골랐어요.', 'They picked the least effort.']],
+        [['glutton'], ['먹을 게 걸린 쪽으로 마음이 갔어요.', 'Their stomach had a say.']],
+        [['diligent', 'perfectionist', 'neat'], ['대충 넘기지 않고 제대로 하려고 했어요.', 'They tried to do it properly.']],
+        [['kind', 'cheerful'], ['상대 기분부터 챙겼어요.', 'They looked after people\'s feelings first.']],
+        [['flatterer'], ['사장님이 좋아할 쪽을 골랐어요.', 'They picked what the boss would like.']],
+        [['timid', 'quiet'], ['일이 커지지 않는 쪽을 골랐어요.', 'They kept it from getting bigger.']],
+        [['chatty'], ['말로 잘 풀어 보려고 했어요.', 'They tried to talk their way through.']],
+        [['clumsy'], ['일단 해 보자며 덤볐어요.', 'They just dove in.']],
+    ];
+    const tags = book(id)?.tags || [];
+    // 고른 선택지와 잘 맞는 태그를 먼저
+    const fits = t => ({ greedy: (eff.money || 0) > 0, lazy: !eff.skill && !eff.fatigue, diligent: !!eff.ok, perfectionist: !!eff.ok, neat: !!eff.ok || (eff.clean || 0) > 0, kind: (eff.rep || 0) > 0 || (eff.mood || 0) > 0, cheerful: (eff.mood || 0) > 0, glutton: (eff.ing || 0) < 0, timid: Math.abs(eff.rep || 0) <= 1 })[t];
+    const order = [...tags.filter(t => fits(t)), ...tags];
+    for (const t of order) { const r = R.find(([ts]) => ts.includes(t)); if (r) return L(...r[1]); }
+    return L('그날 기분대로 정했어요.', 'They went with their mood that day.');
+}
+
+/** 결과 창 숫자 칩: [{t, good}] */
+export function deltaChips(d, ev, exp) {
+    const out = [];
+    const nm = book(ev?.staffIds?.[0])?.name || '';
+    const sg = v => (v > 0 ? '+' : '−') + Math.abs(v);
+    if (d.rep) out.push({ t: L('평판 ', 'Rep ') + sg(d.rep), good: d.rep > 0 });
+    if (d.money) out.push({ t: L('돈 ', '₩ ') + sg(d.money).replace(/(\d)(?=(\d{3})+$)/g, '$1,') + L('원', ''), good: d.money > 0 });
+    if (d.ing) out.push({ t: L('재료 ', 'Stock ') + sg(d.ing), good: d.ing > 0 });
+    if (d.clean) out.push({ t: L('청결 ', 'Clean ') + sg(d.clean), good: d.clean > 0 });
+    if (d.mood) out.push({ t: `${nm} ${L('기분', 'mood')} ${d.mood > 0 ? '↑' : '↓'}`, good: d.mood > 0 });
+    if (d.fatigue) out.push({ t: `${ev?.kind === 'group' || ev?.kind === 'inspection' ? L('다들', 'Everyone\'s') : nm} ${L('피로', 'fatigue')} ${d.fatigue > 0 ? '↑' : '↓'}`, good: d.fatigue < 0 });
+    if (d.relBoss) out.push({ t: `${nm} ↔ ${L('사장', 'boss')} ${d.relBoss > 0 ? '↑' : '↓'}`, good: d.relBoss > 0 });
+    if (d.pairRel) out.push({ t: `${L('둘 사이', 'Their bond')} ${d.pairRel > 0 ? '↑' : '↓'}`, good: d.pairRel > 0 });
+    if (exp) out.push({ t: `${exp.skill === 'bake' ? L('제빵', 'Baking') : L('접객', 'Service')} ${L('경험', 'EXP')} +${exp.n}`, good: true });
+    return out;
 }
 const pickNums = o => Object.fromEntries(Object.entries(o).filter(([, v]) => typeof v === 'number'));
 
@@ -563,11 +611,11 @@ export function closeDay(g, biz) {
     biz.summary = summary;
     addJournal({
         day: g.day, mode: 'direct', weather: g.weather,
-        events: biz.log.map(l => ({ staffId: l.staffIds[0], title: l.title, text: l.line || l.choice })),
+        events: biz.log.map(l => ({ staffId: l.staffIds[0], title: l.title, text: l.result || l.line || l.choice })),
         delta: { money: net, rep: Math.round(g.rep - biz.rep0), exp: biz.expLog.reduce((s, e) => s + e.n, 0) },
         diaries: {},
     });
-    for (const l of biz.log) if (l.delta?.rep >= 5 || l.delta?.rep <= -5 || ['reviewer', 'group', 'fight', 'inspection'].includes(l.kind)) g.stats.memorable.push({ day: g.day, title: l.title, text: l.line || l.choice });
+    for (const l of biz.log) if (l.delta?.rep >= 5 || l.delta?.rep <= -5 || ['reviewer', 'group', 'fight', 'inspection'].includes(l.kind)) g.stats.memorable.push({ day: g.day, title: l.title, text: l.result || l.line || l.choice });
     if (g.stats.memorable.length > 30) g.stats.memorable.splice(0, g.stats.memorable.length - 30);
     makeInbox(g);
     g.phase = 'close';
@@ -686,6 +734,13 @@ export function autoDay(g) {
     // 밤도둑 (피해 작게)
     const careless = g.staff.find(s => hasTag(s.id, 'clumsy', 'lazy'));
     if (careless && chance(.1)) picks.push({ id: uid('ev'), kind: 'nightThief', staffIds: [careless.id] });
+    applyAutoPicks(g, picks);
+    g.stats.autoDays += 1;
+    return { day: g.day, weather: g.weather, money: g.money - before, rep: 0, picks };
+}
+
+/** 사장님 없을 때 일어난 일들 적용 (자동 운영 규칙: 작게, 0 밑으로 안 떨어짐) */
+function applyAutoPicks(g, picks) {
     for (const p of picks) {
         if (p.kind === 'nightThief') { const loss = Math.min(5000, Math.max(0, g.money)); g.money -= loss; p.delta = { money: -loss }; continue; }
         const k = EVENT_KINDS[p.kind];
@@ -695,20 +750,47 @@ export function autoDay(g) {
         p.delta = applyEff(g, eff, p, null);
         if (p.kind === 'sneak') g.ing = Math.max(0, g.ing - 1);
     }
-    g.stats.autoDays += 1;
-    return { day: g.day, weather: g.weather, money: g.money - before, rep: 0, picks };
+}
+
+// ---------- 같은 날 잠깐 비웠을 때 (창을 닫아 둔 시간) ----------
+/** 비운 시간(분) → 생길 일 개수. 설정 "일지 쌓이는 시간"보다 짧으면 0 */
+export function shortAwayCount(minutes) {
+    const th = +S().awayMinutes || 0;
+    if (!th || minutes < th) return 0;
+    return minutes >= 300 ? 3 : minutes >= 120 ? 2 : 1;
+}
+/** 문 열기 전(ready) / 마감 후(done)에 잠깐 비웠을 때 작은 일 몇 개 */
+export function shortAway(g, minutes) {
+    if (!['ready', 'done'].includes(g.phase)) return null;
+    const n = shortAwayCount(minutes);
+    if (!n || !workingStaff(g).length) return null;
+    const before = g.money;
+    const picks = pickEvents(g, 'auto', n);
+    const when = g.phase === 'done' ? 'after' : 'before';
+    if (when === 'after') {
+        const careless = workingStaff(g).find(s => hasTag(s.id, 'clumsy', 'lazy'));
+        if (careless && chance(.1)) picks.push({ id: uid('ev'), kind: 'nightThief', staffIds: [careless.id] });
+    }
+    if (!picks.length) return null;
+    applyAutoPicks(g, picks);
+    save();
+    return { day: g.day, weather: g.weather, money: g.money - before, rep: 0, picks, short: true, minutes: Math.round(minutes), when };
 }
 
 /** 자동 운영 일지 저장 (AI 글이 오면 채움) */
-export function storeAway(days, texts) {
+export function storeAway(days, texts, prev = null) {
     const g = G();
     const dayList = days.map(d => d.day);
-    let events = (texts?.length ? texts : days.flatMap(d => d.picks.map(p => ({ day: d.day, staffId: p.staffIds?.[0], title: kindTitle(p.kind), text: '' })))).slice(0, 5);
+    const short = !!days[0]?.short;
+    const fbText = p => (p.kind === 'nightThief' ? L('문단속을 깜빡한 밤, 누가 다녀갔어요.', 'Someone forgot to lock up, and someone came by.') : EVENT_KINDS[p.kind]?.fb ? L(...EVENT_KINDS[p.kind].fb.s) : '');
+    let events = (texts?.length ? texts : days.flatMap(d => d.picks.map(p => ({ day: d.day, staffId: p.staffIds?.[0], title: kindTitle(p.kind), text: fbText(p) })))).slice(0, 5);
     // AI가 날짜를 엉뚱하게 적었으면 순서대로 나눠 붙임
     events = events.map((e, i) => (dayList.includes(e.day) ? e : { ...e, day: dayList[Math.min(dayList.length - 1, Math.floor(i * dayList.length / events.length))] }));
-    g.away = { days: days.map(d => d.day), events, seen: false, at: Date.now() };
+    // 잠깐 비운 거면, 아직 안 본 지난 "사장님 없을 때"와 합쳐서 보여줌
+    const keep = short && prev && !prev.seen ? (prev.events || []) : [];
+    g.away = { days: [...new Set([...dayList, ...(keep.length ? prev.days || [] : [])])], events: [...events, ...keep].slice(0, 6), seen: false, at: Date.now() };
     for (const d of days) {
-        addJournal({ day: d.day, mode: 'auto', weather: d.weather, events: events.filter(e => e.day === d.day), delta: { money: d.money, rep: 0, exp: g.staff.length } });
+        addJournal({ day: d.day, mode: 'auto', short: d.short ? d.minutes : 0, weather: d.weather, events: events.filter(e => e.day === d.day), delta: { money: d.money, rep: 0, exp: d.short ? 0 : g.staff.length } });
     }
     for (const e of events) if (e.staffId) remember(e.staffId, e.title + (e.text ? ' — ' + e.text : ''));
     save();

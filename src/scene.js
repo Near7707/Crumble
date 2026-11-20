@@ -221,7 +221,9 @@ export function createScene(host, opts = {}) {
     api.say = (e, t, ms = 2400) => {
         if (!t) return;
         const b = e.el.querySelector('.cr-bub'); b.textContent = t; b.classList.add('show');
-        clearTimeout(e._t); e._t = setTimeout(() => b.classList.remove('show'), ms);
+        // 긴 말은 그만큼 오래 보여 줌 (잘리지 않게 여러 줄로 접힘)
+        const dur = Math.min(9000, Math.max(ms, 900 + String(t).length * 110));
+        clearTimeout(e._t); e._t = setTimeout(() => b.classList.remove('show'), dur);
     };
     api.work = (e, on) => e.el.classList.toggle('cr-work', !!on);
     api.jump = e => { e.el.classList.remove('cr-jumping'); void e.el.offsetWidth; e.el.classList.add('cr-jumping'); };

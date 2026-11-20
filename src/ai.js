@@ -140,11 +140,11 @@ const keyMap = ids => Object.fromEntries(ids.map((id, i) => ['S' + (i + 1), id])
 
 // ---------- 1. 고용: 직원 설명서 (+ 그 직원 말투의 기본 말풍선) ----------
 // 기본 말풍선: AI가 실패하거나 아직 안 불렀을 때 장면에서 쓰는 대사. 고용 호출에서 같이 뽑는다.
-export const FALLBACK_KEYS = ['greet', 'pricy', 'cheap', 'buyMore', 'buyLess', 'busy', 'soldout', 'mistake', 'sneak', 'chat', 'clean', 'tired', 'tap1', 'tap2', 'tap3'];
-const FALLBACK_HINT = 'greet=arriving in the morning, pricy=boss set prices high, cheap=prices low, buyMore=boss bought lots of stock, buyLess=bought too little, busy=shop is crowded, soldout=display is empty, mistake=messed up a batch, sneak=caught sneaking a bite, chat=small talk with a customer, clean=while cleaning, tired=tired, tap1/tap2/tap3=random lines when the boss taps them';
+export const FALLBACK_KEYS = ['greet', 'pricy', 'cheap', 'buyMore', 'buyLess', 'busy', 'soldout', 'mistake', 'sneak', 'chat', 'clean', 'tired', 'thanks', 'freebie', 'rescue', 'tap1', 'tap2', 'tap3'];
+const FALLBACK_HINT = 'greet=arriving in the morning, pricy=boss set prices high, cheap=prices low, buyMore=boss bought lots of stock, buyLess=bought too little, busy=shop is crowded, soldout=display is empty, mistake=messed up a batch, sneak=caught sneaking a bite, chat=small talk with a customer, clean=while cleaning, tired=tired, thanks=to a customer after selling (their own way of saying thanks — or not), freebie=slipping a customer a free extra treat, rescue=jumping in to save a coworker\'s botched batch, tap1/tap2/tap3=random lines when the boss taps them';
 function cleanLines(o) {
     const out = {};
-    if (o && typeof o === 'object') for (const k of FALLBACK_KEYS) { const v = str(Array.isArray(o[k]) ? o[k][0] : o[k], 60); if (v) out[k] = v; }
+    if (o && typeof o === 'object') for (const k of FALLBACK_KEYS) { const v = str(Array.isArray(o[k]) ? o[k][0] : o[k], 100); if (v) out[k] = v; }
     return out;
 }
 
@@ -232,11 +232,13 @@ export function cardExampleLines(avatar, max = 10) {
 }
 
 // ---------- 2. 아침: 장면 대사 + 오늘 사건 글 (한 번에) ----------
-const LINE_KEYS = ['greet', 'pricy', 'cheap', 'buyMore', 'buyLess', 'busy', 'soldout', 'mistake', 'sneak', 'chat', 'clean', 'tired', 'tap1', 'tap2', 'tap3'];
+const LINE_KEYS = FALLBACK_KEYS;
 
-export async function morningPrep(g, events) {
+// linesToo=false: 밀린 일처럼 사건 글만 필요할 때 (말풍선은 안 씀)
+export async function morningPrep(g, events, linesToo = true) {
     const ids = g.staff.filter(s => !s.absent).map(s => s.id);
     if (!ids.length) return null;
+    if (!linesToo && !events.length) return null;
     const ref = S().cardRef;
     const evIds = new Set(events.flatMap(e => e.staffIds));
     const withCard = id => ref === 'all' ? evIds.has(id) : ref === 'important' ? events.some(e => e.staffIds.includes(id) && isImportantKind(e.kind)) : false;
@@ -246,36 +248,40 @@ export async function morningPrep(g, events) {
     const evDesc = events.map((e, i) => {
         const kd = EVENT_KINDS[e.kind];
         return `E${i + 1}: type="${kd.label[1]}" (${kd.cat}), involved=${e.staffIds.map(k).join('+')}
-   choices: ${kd.choices.map((c, ci) => `${ci + 1}) ${c.label[1]} [base effect: ${JSON.stringify(c.eff)}]`).join(' | ')}`;
+   choices: ${kd.choices.map((c, ci) => `${ci + 1}) ${c.label[1]}${c.eff.skillCheck || c.eff.gamble ? ' (UNCERTAIN — can go well or badly)' : ''}${c.eff.delegate ? ' (the staff handles it alone, their own way)' : ''} [base effect: ${JSON.stringify(c.eff)}]`).join(' | ')}`;
     }).join('\n');
+    const linesPart = `1) "lines": for EACH staff key (S1..), very short in-shop speech bubbles (max ~25 characters each) in their own voice:
+   greet (arriving in the morning), pricy (boss set prices high), cheap (prices low), buyMore (boss bought lots of stock), buyLess (bought too little),
+   busy (shop is crowded), soldout (display is empty), mistake (they messed up a batch / order), sneak (caught sneaking a bite, or teasing),
+   chat (small talk with a customer), clean (while cleaning), tired, thanks (to a customer after a sale, their own way — a cold one may not really thank),
+   freebie (secretly giving a customer a free extra treat), rescue (jumping in to save a coworker's botched batch), tap1, tap2, tap3 (random lines when the boss taps them).
+`;
     const prompt = `Shop day ${g.day}. Weather: ${WEATHER[g.weather]?.n[1]}. Reputation ${Math.round(g.rep)}/100. Menu: ${menu}.
 
 STAFF:
 ${staffBlock(ids, withCard)}
 
-TODAY'S EVENTS (already decided by the game):
+${linesToo ? 'TODAY\'S EVENTS' : 'EVENTS THAT PILED UP WHILE THE BOSS WAS AWAY'} (already decided by the game):
 ${evDesc || '(none)'}
 
 Write:
-1) "lines": for EACH staff key (S1..), very short in-shop speech bubbles (max ~25 characters each) in their own voice:
-   greet (arriving in the morning), pricy (boss set prices high), cheap (prices low), buyMore (boss bought lots of stock), buyLess (bought too little),
-   busy (shop is crowded), soldout (display is empty), mistake (they messed up a batch / order), sneak (caught sneaking a bite, or teasing),
-   chat (small talk with a customer), clean (while cleaning), tired, tap1, tap2, tap3 (random lines when the boss taps them).
-2) "events": for EACH event E1.., write {"title","situation","guest","staff","choices":[3 x {"label","line","interfere","effects"}]}.
+${linesToo ? linesPart : ''}${linesToo ? '2' : '1'}) "events": for EACH event E1.., write {"title","situation","guest","staff","choices":[3 x {"label","line","result","resultBad","interfere","effects"}]}.
    - situation: 1 sentence. guest: the customer's line (or "" if no customer). staff: the involved staff's line, in character.
    - choices: keep the same 3 choices in order, label them in ${AI_LANG()}.
-   - line: what the staff says/does right after the boss picks that choice (in character, 1 sentence).
+   - line: what the staff says right after that choice is made (in character, 1 sentence).
+   - result: ONE short narrator sentence telling who did what and how it turned out, if it goes well (e.g. "<name> remade the cake and the customer left smiling."). Use the staff's real name.
+   - resultBad: only for UNCERTAIN choices — the same kind of sentence when it goes badly; otherwise "".
    - interfere: true if their personality makes them NOT do it exactly as told (slacking, talking back, secretly giving freebies...).
    - effects: optional small numeric changes {rep, money, ing, mood, fatigue, relBoss, clean} if personality changes the outcome; otherwise {}.
 
-Return JSON: {"lines":{"S1":{...}}, "events":[...]}`;
-    const j = await askJson(prompt, system());
+Return JSON: {${linesToo ? '"lines":{"S1":{...}}, ' : ''}"events":[...]}`;
+    const j = await askJson(prompt, system(), 2, 2600);
     if (!j) return null;
     const lines = {};
     for (const [key, id] of Object.entries(km)) {
         const src = j.lines?.[key] || j.lines?.[book(id)?.name] || {};
         lines[id] = {};
-        for (const lk of LINE_KEYS) { const v = str(src[lk], 60); if (v) lines[id][lk] = v; }
+        for (const lk of LINE_KEYS) { const v = str(src[lk], 100); if (v) lines[id][lk] = v; }
     }
     const texts = events.map((e, i) => {
         const x = Array.isArray(j.events) ? j.events[i] : null;
@@ -288,7 +294,7 @@ Return JSON: {"lines":{"S1":{...}}, "events":[...]}`;
             staff: str(x.staff, 160),
             choices: kd.choices.map((c, ci) => {
                 const y = Array.isArray(x.choices) ? x.choices[ci] || {} : {};
-                return { label: str(y.label, 60), line: str(y.line, 160), interfere: !!y.interfere, effects: typeof y.effects === 'object' && y.effects ? y.effects : null };
+                return { label: str(y.label, 60), line: str(y.line, 160), result: str(y.result, 180), resultBad: str(y.resultBad, 180), interfere: !!y.interfere, effects: typeof y.effects === 'object' && y.effects ? y.effects : null };
             }),
         };
     });
@@ -301,7 +307,7 @@ export async function closingDiary(g, biz, inbox) {
     if (!ids.length) return null;
     const km = keyMap(ids);
     const k = id => Object.entries(km).find(([, v]) => v === id)?.[0];
-    const log = biz.log.map(l => `- ${l.title}: boss chose "${l.choice}"${l.line ? ` → "${l.line}"` : ''} (involved: ${l.staffIds.map(k).join('+')})`).join('\n');
+    const log = biz.log.map(l => `- ${l.title}: ${l.by === 'boss' || !l.by ? 'boss chose' : l.by === 'delegate' ? 'boss left it to the staff, who chose' : 'boss didn\'t look, so the staff chose'} "${l.choice}"${l.result ? ` → ${l.result}` : ''}${l.line ? ` ("${l.line}")` : ''} (involved: ${l.staffIds.map(k).join('+')})`).join('\n');
     const asks = inbox.filter(it => it.staffId && ids.includes(it.staffId) && ['complaint', 'menu', 'quit'].includes(it.kind)).map(it => `${it.id}: ${k(it.staffId)} ${it.kind}`).join('\n');
     const prompt = `End of shop day ${g.day}. Customers served: ${biz.served}. Sold out moments: ${biz.soldout}. Customers who left angry: ${biz.left}. Burnt batches: ${biz.burnt}. Sneaked bites: ${biz.eaten}.
 Today's events:
@@ -330,14 +336,20 @@ export async function awayJournal(days) {
     const km = keyMap(ids);
     const k = id => Object.entries(km).find(([, v]) => v === id)?.[0];
     const picks = days.flatMap(d => d.picks.map(p => `day ${d.day}: ${p.kind === 'nightThief' ? 'night burglar (someone forgot to lock up)' : EVENT_KINDS[p.kind].label[1]} — ${(p.staffIds || []).map(k).join('+')}`)).join('\n');
-    const prompt = `The boss was away for ${days.length} day(s) (days ${days.map(d => d.day).join(', ')}). The staff ran the shop alone.
+    const d0 = days[0];
+    const hrs = d0?.short ? (d0.minutes >= 90 ? `${Math.round(d0.minutes / 60)} hours` : `${d0.minutes} minutes`) : '';
+    const head = d0?.short
+        ? `On day ${d0.day} the boss stepped away for about ${hrs}, ${d0.when === 'after' ? 'after closing time (the shop is closed, staff tidying up or hanging around)' : 'before opening (staff getting ready)'}.`
+        : `The boss was away for ${days.length} day(s) (days ${days.map(d => d.day).join(', ')}). The staff ran the shop alone.`;
+    const count = d0?.short ? `${Math.max(1, d0.picks.length)}` : '3-5';
+    const prompt = `${head}
 Things that happened (decided by the game):
 ${picks || '(nothing special)'}
 
 STAFF:
 ${staffBlock(ids, null)}
 
-Write a short journal of 3-5 entries about what happened while the boss was away, including the listed events and some behind-the-scenes moments.
+Write a short journal of ${count} entries about what happened while the boss was away, including the listed events${d0?.short ? '' : ' and some behind-the-scenes moments'}.
 Do NOT make it all heartwarming — include flaws and small mischief.
 Each entry: {"day": number, "staff": "S1", "time": "short time like 오후 3시 / 3 PM", "title": "short title", "text": "1-2 sentences"}.
 Return JSON: {"entries":[...]}`;

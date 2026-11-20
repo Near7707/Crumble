@@ -49,6 +49,8 @@ const DEFAULT_SETTINGS = {
     bossName: '', // '' = 페르소나 이름
     bossNameAsked: false, // 처음 열 때 사장 이름을 물어봤는지
     winSize: 'auto', // auto | s | m | l
+    awayMinutes: 30, // 창을 닫고 이만큼 지나면 "사장님 없을 때" 일지가 쌓임 (0 = 끔)
+    backlogMinutes: 60, // 영업 중 창을 닫고 이만큼 지나면 밀린 일이 쌓임 (0 = 끔)
     staffBook: {},
     game: null,
     pastShops: [],
