@@ -28,9 +28,9 @@ https://github.com/Near7707/Crumble
 
 ## 설정
 
-확장 설정 칸의 **Crumble**에서:
+확장 설정 칸의 **Crumble**이나 게임 창 위쪽 **⚙ 버튼**에서 (두 곳은 같은 설정이에요):
 
-- **사장 이름**: 비우면 페르소나 이름을 써요.
+- **사장 이름**: 비우면 페르소나 이름을 써요. 처음 가게를 열 때와 폐업 후 새 가게를 열 때도 정할 수 있어요.
 - **창 크기**: 자동(컴퓨터에서 크게) / 보통 / 크게 / 아주 크게. 창이 넓으면 가게 장면도 같이 커져요.
 - **언어**: 자동(실리태번 언어) / 한국어 / English — AI가 쓰는 글도 이 언어로 나와요.
 - **AI 연결**: 지금 연결 그대로(기본) / 실리태번 연결 프로필 중 하나. 게임 글만 그 프로필로 보내고, 채팅 연결은 바꾸지 않아요. 고른 프로필을 못 찾으면 지금 연결 그대로 써요.
@@ -94,9 +94,9 @@ Then open **Crumble** from the extensions (wand) menu.
 
 ## Settings
 
-Under **Crumble** in the extension settings:
+Under **Crumble** in the extension settings, or with the **⚙ button** at the top of the game window (both are the same settings):
 
-- **Owner name**: leave blank to use your persona name.
+- **Owner name**: leave blank to use your persona name. You can also set it when you first open the shop and when you open a new shop after closing.
 - **Window size**: Auto (bigger on desktop) / Normal / Large / Extra large. The shop scene grows with the window.
 - **Language**: Auto (SillyTavern language) / 한국어 / English — AI-written text follows this too.
 - **AI connection**: Current connection (default) / one of your SillyTavern connection profiles. Only game text goes through that profile; your chat connection is never switched. If the profile is missing, the current connection is used.

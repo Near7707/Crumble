@@ -352,3 +352,18 @@ button.cr-ent { cursor: pointer; }
 .cr-bigview { position: absolute; inset: 0; z-index: 58; background: var(--cr-cream); }
 .cr-bigview .cr-scene { border-radius: 0; border-width: 0; }
 .crumble-settings .crumble-openbtn { width: 100%; white-space: nowrap; display: flex; align-items: center; justify-content: center; gap: 6px; margin: 4px 0; }
+
+/* ⚙ 설정 (0.1.7) */
+.cr-gear { width: 36px; height: 36px; border-radius: 50%; border: 1.5px solid var(--cr-line2); background: var(--cr-card); display: flex; align-items: center; justify-content: center; cursor: pointer; flex: none; padding: 0; }
+.cr-gear.push { margin-left: auto; }
+.cr-gear.push + .cr-pause { margin-left: 0; }
+.cr-sBox { display: flex; flex-direction: column; gap: 4px; }
+.cr-sBox .cr-sGroup { font-size: 13px; font-weight: 800; margin-top: 10px; padding-bottom: 3px; border-bottom: 1.5px dashed var(--cr-line2); }
+.cr-sBox .cr-sGroup:first-child { margin-top: 0; }
+.cr-sBox .cr-field { margin-top: 4px; }
+.cr-sBox select.cr-input { font-size: 15px; }
+.cr-sBox .cr-sNote { font-size: 11.5px; }
+.cr-sBox .cr-sRange { width: 100%; accent-color: var(--cr-coral); height: 28px; }
+.cr-check { display: flex; align-items: center; gap: 8px; font-size: 13.5px; min-height: 36px; margin-top: 4px; cursor: pointer; }
+.cr-check input { width: 20px; height: 20px; accent-color: var(--cr-coral); flex: none; }
+.crumble-settings .crumble-sgroup { font-weight: 700; margin-top: 12px; padding-bottom: 2px; border-bottom: 1px solid var(--SmartThemeBorderColor, rgba(128,128,128,.4)); }

@@ -47,6 +47,7 @@ const DEFAULT_SETTINGS = {
     responseLength: 1600,
     profileId: '', // '' = 지금 연결 그대로
     bossName: '', // '' = 페르소나 이름
+    bossNameAsked: false, // 처음 열 때 사장 이름을 물어봤는지
     winSize: 'auto', // auto | s | m | l
     staffBook: {},
     game: null,

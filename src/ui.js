@@ -13,7 +13,8 @@ import { faceChip, faceStyle, ICON } from './looks.js';
 import { createScene } from './scene.js';
 import { awayJournal, makeManual, FALLBACK_KEYS, bossLabel } from './ai.js';
 import { line, tapLine } from './lines.js';
-import { renderBusiness, resumeIfNeeded, businessActive, pauseBusiness } from './screens.js';
+import { renderBusiness, resumeIfNeeded, businessActive, pauseBusiness, bizPaused } from './screens.js';
+import { fieldsHtml, bindFields, onSettings, personaName, setBossName } from './settings.js';
 import { renderEnding } from './ending.js';
 
 export const view = { tab: 'shop', staffIdx: 0, staffSub: 'stats', journal: 'this', open: false };
@@ -90,6 +91,9 @@ export async function openWindow() {
     render();
     if (days) runAway(days);
     resumeIfNeeded();
+    // 사장 이름을 한 번도 안 정했으면 한 번만 물어봄 (가게 탭일 때만)
+    const g = G();
+    if (!S().bossNameAsked && ['ready', 'done'].includes(g.phase)) askBossName();
 }
 export function closeWindow() {
     if (!root) return;
@@ -108,7 +112,7 @@ async function runAway(days) {
     try { texts = await awayJournal(days); } catch (e) { console.warn(e); }
     storeAway(days, texts);
     awayBusy = false;
-    if (view.open && !businessActive()) render();
+    if (view.open && !businessActive()) softRender();
 }
 
 // ---------- 그리기 ----------
@@ -127,6 +131,11 @@ export function render() {
 export function logoHtml() {
     return `<img class="cr-logo" src="${assetUrl('assets/crumble_logo@2x.png')}" alt="Crumble" draggable="false">`;
 }
+// 설정 버튼 (모든 화면 머리 부분)
+export function gearBtn(push = false) {
+    const teeth = [0, 45, 90, 135].map(a => `<rect x="10" y="1.6" width="4" height="20.8" rx="1.3" transform="rotate(${a} 12 12)"/>`).join('');
+    return `<button class="cr-gear${push ? ' push' : ''}" type="button" data-act="settings" aria-label="${L('설정', 'Settings')}"><svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><g fill="#8A5A36">${teeth}<circle cx="12" cy="12" r="7.6"/></g><circle cx="12" cy="12" r="3.1" fill="#FFFDF9"/></svg></button>`;
+}
 export function closeBtn() {
     return `<button class="cr-x" type="button" data-act="close" aria-label="${L('창 닫기', 'Close')}"><svg width="16" height="16" viewBox="0 0 20 20" aria-hidden="true"><path d="M5 5l10 10M15 5L5 15" stroke="#8A5A36" stroke-width="2.4" stroke-linecap="round"/></svg></button>`;
 }
@@ -139,7 +148,7 @@ function statusText(g) {
 }
 function headHtml() {
     const g = G();
-    return `<header class="cr-top"><div class="cr-row">${logoHtml()}<span class="cr-money${g.money < 0 ? ' neg' : ''}">💰 ${money(g.money)}</span>${closeBtn()}</div>
+    return `<header class="cr-top"><div class="cr-row">${logoHtml()}<span class="cr-money${g.money < 0 ? ' neg' : ''}">💰 ${money(g.money)}</span>${gearBtn()}${closeBtn()}</div>
 <div class="cr-row cr-status"><span class="cr-pill day">${F(L('{n}일째', 'Day {n}'), { n: g.day })}</span><span class="cr-pill wx">${weatherLabel(g.weather)}</span><span class="cr-pill st"><i></i>${statusText(g)}</span>${g.money < 0 ? `<span class="cr-pill debt">${F(L('빚 {n}/3일', 'Debt {n}/3'), { n: g.debtDays })}</span>` : ''}</div></header><div class="cr-drip"></div>`;
 }
 function tabsHtml() {
@@ -337,15 +346,69 @@ export function closeSheet() {
     root.querySelector('.cr-sheet').classList.remove('open', 'lock');
     if (!root.querySelector('.cr-modal').classList.contains('open')) root.querySelector('.cr-dim').classList.remove('on');
 }
-export function openModal(html) {
+export function openModal(html, kind = '') {
     const m = root.querySelector('.cr-modal');
-    m.innerHTML = html; m.classList.add('open'); root.querySelector('.cr-dim').classList.add('on');
+    m.innerHTML = html; m.dataset.kind = kind; m.classList.add('open'); root.querySelector('.cr-dim').classList.add('on');
     return m;
 }
 export function closeModal() {
     if (!root) return;
-    root.querySelector('.cr-modal').classList.remove('open');
+    const m = root.querySelector('.cr-modal');
+    const kind = m.classList.contains('open') ? m.dataset.kind : '';
+    m.classList.remove('open'); m.dataset.kind = '';
     if (!root.querySelector('.cr-sheet').classList.contains('open')) root.querySelector('.cr-dim').classList.remove('on');
+    if (kind === 'boss' && !S().bossNameAsked) { S().bossNameAsked = true; save(); }
+    if (kind === 'settings' && settingsPausedBiz) { settingsPausedBiz = false; pauseBusiness(false); }
+    if ((kind === 'settings' || kind === 'boss') && pendingRender) { pendingRender = false; render(); }
+}
+
+// ---------- ⚙ 설정 (창 안) ----------
+let pendingRender = false, settingsPausedBiz = false;
+const keepModal = () => { const m = root?.querySelector('.cr-modal'); return !!m && m.classList.contains('open') && ['settings', 'boss'].includes(m.dataset.kind); };
+/** 설정·이름 창이 떠 있으면 닫힐 때 다시 그리고, 아니면 바로 다시 그림 */
+export function softRender() { if (keepModal()) { pendingRender = true; return; } render(); }
+
+function settingsBody() {
+    return `<div class="cr-mtitle">⚙ ${L('설정', 'Settings')}<small>${L('확장 설정 칸과 같은 설정이에요. 한쪽에서 바꾸면 다른 쪽도 바뀌어요.', 'Same as the extension settings panel. Changing one updates the other.')}</small></div>
+<div class="cr-sBox">${fieldsHtml('game')}</div>
+<div class="cr-actions"><button class="cr-pbtn sm" type="button" data-act="modalClose">${L('닫기', 'Close')}</button></div>`;
+}
+function openSettings() {
+    const m = openModal(settingsBody(), 'settings');
+    bindFields(m.querySelector('.cr-sBox'), 'game');
+    // 영업 중이면 설정 보는 동안 가게를 멈춤
+    if (businessActive() && !bizPaused()) { pauseBusiness(true, false); settingsPausedBiz = true; }
+}
+function redrawSettingsModal() {
+    const m = root?.querySelector('.cr-modal');
+    if (!m || !m.classList.contains('open') || m.dataset.kind !== 'settings') return;
+    const top = m.scrollTop;
+    m.innerHTML = settingsBody();
+    bindFields(m.querySelector('.cr-sBox'), 'game');
+    m.scrollTop = top;
+}
+
+onSettings((key, scope) => {
+    if (!root || !view.open) return;
+    if (key === 'winSize') applyWinSize();
+    // 확장 설정 칸에서 바꿨거나 언어가 바뀌면 창 안 설정도 다시 그림
+    if (scope !== 'game' || key === 'lang') redrawSettingsModal();
+    if (!['lang', 'bossName', 'winSize'].includes(key)) return;
+    if (businessActive()) { if (key === 'lang' || key === 'bossName') toast(L('영업이 끝나면 화면에 반영돼요', 'Shows up after today\'s business')); return; }
+    softRender();
+});
+
+// ---------- 👑 사장 이름 정하기 (처음 한 번) ----------
+export function askBossName() {
+    const s = S(), pn = personaName();
+    const m = openModal(`<div class="cr-mtitle">👑 ${L('사장님 이름을 정해 주세요', 'What should your staff call you?')}<small>${L('직원들이 이 이름으로 불러요. 나중에 ⚙ 설정에서 바꿀 수 있어요.', 'Your staff will use this name. You can change it later in ⚙ Settings.')}</small></div>
+<input class="cr-input" type="text" maxlength="30" value="${esc(s.bossName || pn)}" placeholder="${esc(L('사장 이름', 'Owner name'))}" aria-label="${esc(L('사장 이름', 'Owner name'))}">
+${pn ? `<p class="cr-muted">${F(L('비워 두면 페르소나 이름({n})을 써요.', 'Leave blank to use your persona name ({n}).'), { n: esc(pn) })}</p>` : ''}
+<div class="cr-actions"><button class="cr-btn" type="button" data-act="modalClose">${L('나중에', 'Later')}</button><button class="cr-pbtn sm" type="button" data-act="bossOk">${L('정했어요', 'Done')}</button></div>`, 'boss');
+    const inp = m.querySelector('input');
+    const ok = () => { setBossName(inp.value, 'game'); closeModal(); };
+    m.querySelector('[data-act="bossOk"]').onclick = e => { e.stopPropagation(); ok(); };
+    inp.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); ok(); } });
 }
 let toastT = null;
 export function toast(t, ms = 2600) {
@@ -549,6 +612,7 @@ async function onClick(e) {
     const a = t.dataset.act;
     switch (a) {
         case 'close': closeWindow(); break;
+        case 'settings': openSettings(); break;
         case 'modalClose': closeModal(); break;
         case 'toJournal': view.tab = 'journal'; view.journal = 'this'; render(); break;
         case 'hire': if (g.staff.length < MAX_STAFF) hirePicker(); break;

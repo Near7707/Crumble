@@ -6,7 +6,8 @@ import { createScene } from './scene.js';
 import { faceChip } from './looks.js';
 import { endingWords, bossLabel } from './ai.js';
 import { line } from './lines.js';
-import { render, addScene, closeBtn, heartRow } from './ui.js';
+import { render, addScene, closeBtn, gearBtn, heartRow } from './ui.js';
+import { personaName, setBossName } from './settings.js';
 
 const STEPS = [['마지막 영업일', 'Last day'], ['마지막 한마디', 'Last words'], ['폐업 일지', 'Closing log'], ['사장 한마디', 'Your words'], ['다시 시작', 'Start over']];
 
@@ -30,11 +31,12 @@ async function loadAi() {
 export function renderEnding(box) {
     const g = G(); const e = E();
     loadAi();
-    const head = `<header class="cr-top biz cr-end"><div class="cr-row"><div class="cr-endSteps">${STEPS.map((s, i) => `<span class="${i === e.step ? 'now' : i < e.step ? 'done' : ''}">${i === e.step ? L(...s) : i + 1}</span>`).join('')}</div>${closeBtn()}</div></header><div class="cr-drip dark"></div>`;
+    const head = `<header class="cr-top biz cr-end"><div class="cr-row"><div class="cr-endSteps">${STEPS.map((s, i) => `<span class="${i === e.step ? 'now' : i < e.step ? 'done' : ''}">${i === e.step ? L(...s) : i + 1}</span>`).join('')}</div>${gearBtn()}${closeBtn()}</div></header><div class="cr-drip dark"></div>`;
     const nav = `<div class="cr-actions cr-endNav"><button class="cr-btn" type="button" data-e="prev" ${e.step === 0 ? 'disabled' : ''}>${L('‹ 이전', '‹ Back')}</button>${e.step < 4 ? `<button class="cr-pbtn" type="button" data-e="next">${[L('직원들에게 알리기', 'Tell the staff'), L('다음', 'Next'), L('다음', 'Next'), L('다음', 'Next')][e.step]} ›</button>` : `<button class="cr-pbtn" type="button" data-e="restart">${L('새 가게 열기', 'Open a new shop')}</button>`}</div>`;
     box.innerHTML = head + `<main class="cr-main cr-endMain"><div class="cr-sceneHost" id="cr-eScene"></div>${body(e.step)}${nav}</main>`;
     const sc = addScene(createScene(box.querySelector('#cr-eScene'), { size: e.step === 4 ? '11x9' : g.size, height: 210, zoom: .7, focus: [5, 4] }));
     scene(sc, e.step);
+    box.querySelector('#cr-newBoss')?.addEventListener('input', ev => { e.newBoss = ev.target.value.slice(0, 30); save(); });
     box.querySelector('main').addEventListener('click', ev => {
         const b = ev.target.closest('[data-e]'); if (!b) return;
         const a = b.dataset.e;
@@ -79,6 +81,7 @@ ${best ? `<p class="cr-muted cr-center">${F(L('{d}일째, 손님 {n}명에게 {m
         case 4: {
             const pairs = Object.entries(g.rel).filter(([, v]) => v.v || v.memo).slice(0, 8);
             return `<section class="cr-card cr-past"><div class="cr-ttl">🏚 ${L('지난 가게들', 'Past shops')}</div><div class="cr-hist"><b>${esc(g.name)}</b> · ${F(L('{n}일 영업', '{n} days'), { n: g.day })} · ${L('최고 평판', 'Best rep')} ${g.stats.maxRep}</div>${e.bossWords ? `<p class="cr-say">👑 “${esc(e.bossWords)}”</p>` : ''}</section>
+<section class="cr-card"><label class="cr-field" for="cr-newBoss">👑 ${L('새 가게 사장 이름', 'Owner name for the new shop')}<input id="cr-newBoss" class="cr-input" type="text" maxlength="30" value="${esc(e.newBoss ?? (S().bossName || personaName()))}" placeholder="${esc(L('사장 이름', 'Owner name'))}"></label><small class="cr-muted">${L('비우면 페르소나 이름을 써요. 나중에 ⚙ 설정에서도 바꿀 수 있어요.', 'Blank = persona name. You can also change it later in ⚙ Settings.')}</small></section>
 <section class="cr-card"><label class="cr-switch"><span>${L('지난 관계 이어가기', 'Carry over relationships')}</span><button type="button" role="switch" aria-checked="${e.carry}" class="cr-sw${e.carry ? ' on' : ''}" data-e="carry"><i></i></button></label>
 ${e.carry ? `<div class="cr-muted">${pairs.map(([k, v]) => { const [a, b] = k.split('|'); const nm = x => x === 'boss' ? bossLabel() : book(x)?.name || '?'; return `<div class="cr-hist">${esc(nm(a))} ↔ ${esc(nm(b))} · ${v.v}${v.memo ? ' — ' + esc(v.memo) : ''}</div>`; }).join('') || L('이어갈 관계가 없어요.', 'Nothing to carry over.')}</div><p class="cr-note">${L('관계가 이어져도 게임이 쉬워지지는 않아요.', 'Carried bonds don\'t make the game easier.')}</p>` : ''}</section>`;
         }
@@ -133,7 +136,9 @@ function restart() {
     // 가게 기억(사건 기록)은 직원 설명서와 따로. 관계는 고른 경우만 이어감.
     const carry = e.carry ? structuredClone(g.rel) : null;
     s.game = newGame(carry);
+    const nb = e.newBoss;
     save(true);
+    if (nb !== undefined) setBossName(nb, 'game'); // 설정 칸도 같이 바뀜
     render();
 }
 
