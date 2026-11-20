@@ -1,7 +1,7 @@
 // 폐업 엔딩 — 5단계 (마지막 영업일 → 마지막 한마디 → 폐업 일지 → 사장 한마디 → 다시 시작)
 import { esc, clamp } from './util.js';
 import { L, F, money, signedMoney } from './i18n.js';
-import { S, G, save, book, staffById, bossRel, rel, newGame } from './state.js';
+import { S, G, save, book, staffById, bossRel, rel, newGame, shopName } from './state.js';
 import { createScene } from './scene.js';
 import { faceChip } from './looks.js';
 import { endingWords, bossLabel } from './ai.js';
@@ -37,6 +37,7 @@ export function renderEnding(box) {
     const sc = addScene(createScene(box.querySelector('#cr-eScene'), { size: e.step === 4 ? '11x9' : g.size, height: 210, zoom: .7, focus: [5, 4] }));
     scene(sc, e.step);
     box.querySelector('#cr-newBoss')?.addEventListener('input', ev => { e.newBoss = ev.target.value.slice(0, 30); save(); });
+    box.querySelector('#cr-newShop')?.addEventListener('input', ev => { e.newShop = ev.target.value.slice(0, 24); save(); });
     box.querySelector('main').addEventListener('click', ev => {
         const b = ev.target.closest('[data-e]'); if (!b) return;
         const a = b.dataset.e;
@@ -80,8 +81,9 @@ ${best ? `<p class="cr-muted cr-center">${F(L('{d}일째, 손님 {n}명에게 {m
             return `<section class="cr-card"><div class="cr-ttl">👑 ${L('사장님의 마지막 한마디', 'Your final words')}</div><textarea id="cr-bossWords" class="cr-input" maxlength="120" rows="3" placeholder="${L('가게에, 직원들에게 남길 말 (120자)', 'Something to leave the shop and staff (120 chars)')}">${esc(e.bossWords)}</textarea><div class="cr-actions"><button class="cr-btn" type="button" data-e="skip">${L('건너뛰기', 'Skip')}</button></div></section>`;
         case 4: {
             const pairs = Object.entries(g.rel).filter(([, v]) => v.v || v.memo).slice(0, 8);
-            return `<section class="cr-card cr-past"><div class="cr-ttl">🏚 ${L('지난 가게들', 'Past shops')}</div><div class="cr-hist"><b>${esc(g.name)}</b> · ${F(L('{n}일 영업', '{n} days'), { n: g.day })} · ${L('최고 평판', 'Best rep')} ${g.stats.maxRep}</div>${e.bossWords ? `<p class="cr-say">👑 “${esc(e.bossWords)}”</p>` : ''}</section>
-<section class="cr-card"><label class="cr-field" for="cr-newBoss">👑 ${L('새 가게 사장 이름', 'Owner name for the new shop')}<input id="cr-newBoss" class="cr-input" type="text" maxlength="30" value="${esc(e.newBoss ?? (S().bossName || personaName()))}" placeholder="${esc(L('사장 이름', 'Owner name'))}"></label><small class="cr-muted">${L('비우면 페르소나 이름을 써요. 나중에 ⚙ 설정에서도 바꿀 수 있어요.', 'Blank = persona name. You can also change it later in ⚙ Settings.')}</small></section>
+            return `<section class="cr-card cr-past"><div class="cr-ttl">🏚 ${L('지난 가게들', 'Past shops')}</div><div class="cr-hist"><b>${esc(shopName(g) || L('이름 없는 가게', 'Unnamed shop'))}</b> · ${F(L('{n}일 영업', '{n} days'), { n: g.day })} · ${L('최고 평판', 'Best rep')} ${g.stats.maxRep}</div>${e.bossWords ? `<p class="cr-say">👑 “${esc(e.bossWords)}”</p>` : ''}</section>
+<section class="cr-card"><label class="cr-field" for="cr-newBoss">👑 ${L('새 가게 사장 이름', 'Owner name for the new shop')}<input id="cr-newBoss" class="cr-input" type="text" maxlength="30" value="${esc(e.newBoss ?? (S().bossName || personaName()))}" placeholder="${esc(L('사장 이름', 'Owner name'))}"></label><small class="cr-muted">${L('비우면 페르소나 이름을 써요. 나중에 ⚙ 설정에서도 바꿀 수 있어요.', 'Blank = persona name. You can also change it later in ⚙ Settings.')}</small>
+<label class="cr-field" for="cr-newShop">🏪 ${L('새 가게 이름', 'Name for the new shop')}<input id="cr-newShop" class="cr-input" type="text" maxlength="24" value="${esc(e.newShop ?? '')}" placeholder="${esc(L('예: 말랑 제과점', 'e.g. Little Crumb Bakery'))}"></label><small class="cr-muted">${L('비워 두면 나중에 가게 탭에서 정할 수 있어요.', 'Leave blank to name it later from the Shop tab.')}</small></section>
 <section class="cr-card"><label class="cr-switch"><span>${L('지난 관계 이어가기', 'Carry over relationships')}</span><button type="button" role="switch" aria-checked="${e.carry}" class="cr-sw${e.carry ? ' on' : ''}" data-e="carry"><i></i></button></label>
 ${e.carry ? `<div class="cr-muted">${pairs.map(([k, v]) => { const [a, b] = k.split('|'); const nm = x => x === 'boss' ? bossLabel() : book(x)?.name || '?'; return `<div class="cr-hist">${esc(nm(a))} ↔ ${esc(nm(b))} · ${v.v}${v.memo ? ' — ' + esc(v.memo) : ''}</div>`; }).join('') || L('이어갈 관계가 없어요.', 'Nothing to carry over.')}</div><p class="cr-note">${L('관계가 이어져도 게임이 쉬워지지는 않아요.', 'Carried bonds don\'t make the game easier.')}</p>` : ''}</section>`;
         }
@@ -128,14 +130,16 @@ function restart() {
     const s = S(), g = G(), e = E();
     const reviews = g.staff.map(x => ({ name: book(x.id)?.name, text: e.ai?.review?.[x.id] || '' }));
     s.pastShops.unshift({
-        id: g.id, name: g.name, days: g.day, maxRep: g.stats.maxRep, bestDay: g.stats.bestDay,
+        id: g.id, name: shopName(g) || L('이름 없는 가게', 'Unnamed shop'), days: g.day, maxRep: g.stats.maxRep, bestDay: g.stats.bestDay,
         memorable: (e.ai?.memorable?.length ? e.ai.memorable : g.stats.memorable.slice(-3)),
         reviews, bossWords: e.bossWords, closedOn: g.dayKey,
     });
     if (s.pastShops.length > 30) s.pastShops.length = 30;
     // 가게 기억(사건 기록)은 직원 설명서와 따로. 관계는 고른 경우만 이어감.
     const carry = e.carry ? structuredClone(g.rel) : null;
+    const ns = String(e.newShop || '').trim();
     s.game = newGame(carry);
+    if (ns) { s.game.name = ns; s.game.nameAsked = true; }
     const nb = e.newBoss;
     save(true);
     if (nb !== undefined) setBossName(nb, 'game'); // 설정 칸도 같이 바뀜

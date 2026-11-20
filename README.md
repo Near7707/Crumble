@@ -12,7 +12,7 @@
 - **하루 5~10분.** 🌅 아침 준비(재료·가격) → ☕ 영업(사건이 "!"로 떠요) → 🌙 마감 정산(번 돈, 직원 일기). 영업 중엔 직원 머리 위 이름표, 손님 기다림 막대, 떠오르는 숫자, "지금 가게 소식"으로 무슨 일이 있는지 보여요. 하루를 마치면 결과를 보고 원할 때 바로 다음 날을 시작해요.
 - **사건은 직접 고르거나 맡기거나.** "!"를 누르면 선택지가 나와요. 직원에게 맡기면 성격대로 처리하고, [나중에 보기]로 미뤄 둘 수도 있어요. 처리하고 나면 **결과 창**에 누가 무엇을 해서 어떻게 됐는지가 떠요. 영업 중에도 직원·결재함·일지 탭을 볼 수 있어요 (보는 동안 가게는 멈춰요).
 - **말투 샘플.** 직원 설명서에 RP 속 실제 대사를 넣으면 그 말투를 따라 해요. 다른 언어로 적어도 느낌만 살려 옮겨요.
-- **사장님이 없을 때도 가게는 돌아가요.** 창을 닫아 두면 8시간(설정)마다 직원들끼리 하루를 영업하고, 다시 켜면 그동안 있었던 일이 일지로 정리돼 있어요 (최대 3일치). 그보다 짧게 창을 30분 넘게 닫아 두면 작은 일이 쌓이고, 영업 중에 1시간 넘게 비우면 밀린 일이 기다리고 있어요. 자리 비운 사이에 망하지는 않아요.
+- **사장님이 없을 때도 가게는 돌아가요.** 창을 닫아 두면 8시간(설정)마다 직원들끼리 하루를 영업하고, 다시 켜면 그동안 있었던 일이 **가게 로그**에 정리돼 있어요 (최대 3일치). 가게 로그에는 사장님이 있을 때·없을 때 일이 시간 덩어리로 쌓이고, 손님·매출·새는 돈도 같이 보여요. 그보다 짧게 창을 30분 넘게 닫아 두면 작은 일이 쌓이고, 영업 중에 1시간 넘게 비우면 밀린 일이 기다리고 있어요. 자리 비운 사이에 망하지는 않아요.
 - **능력과 성격은 따로.** 제빵·접객 능력은 자라지만 성격은 카드 그대로예요. 유능한 직원도 사고를 칠 수 있어요.
 - **친해진다고 쉬워지지 않아요.** 관계는 대사와 태도를 바꾸지만 숫자 보너스는 없어요.
 - **결재함**: 신메뉴 제안, 불만, 급전 대출 같은 큰 결정은 최대 3개까지 쌓여요.
@@ -33,6 +33,7 @@ https://github.com/Near7707/Crumble
 확장 설정 칸의 **Crumble**이나 게임 창 위쪽 **⚙ 버튼**에서 (두 곳은 같은 설정이에요):
 
 - **사장 이름**: 비우면 페르소나 이름을 써요. 처음 가게를 열 때와 폐업 후 새 가게를 열 때도 정할 수 있어요.
+- **가게 이름**: 가게 탭 위쪽 [이름 바꾸기]에서도 바꿀 수 있어요. 직원들이 가게 이름을 부르기도 해요.
 - **창 크기**: 자동(컴퓨터에서 크게) / 보통 / 크게 / 아주 크게. 창이 넓으면 가게 장면도 같이 커져요.
 - **언어**: 자동(실리태번 언어) / 한국어 / English — AI가 쓰는 글도 이 언어로 나와요.
 - **AI 연결**: 지금 연결 그대로(기본) / 실리태번 연결 프로필 중 하나. 게임 글만 그 프로필로 보내고, 채팅 연결은 바꾸지 않아요. 고른 프로필을 못 찾으면 지금 연결 그대로 써요.
@@ -82,7 +83,7 @@ A shop-management extension for SillyTavern: characters from your character card
 - **5–10 minutes a day.** 🌅 Morning prep (stock & prices) → ☕ Business (events pop up as "!") → 🌙 Closing (earnings, staff diaries). During business, status tags over staff, guest wait bars, floating numbers and a "Shop news" card show what's going on. After closing you see the day's results and start the next day whenever you like.
 - **Decide, delegate, or later.** Tap a "!" to choose, leave it to the staff (they handle it their own way), or put it off. Afterwards a **result card** shows who did what and how it turned out. You can check the Staff, Inbox and Log tabs during business (the shop waits while you look).
 - **Voice samples.** Paste real roleplay lines into a staff manual and they'll talk like that — in any language, the feel carries over.
-- **The shop runs while you're away.** With the window closed, the staff run a day on their own every 8 hours (adjustable), and a log of what happened is waiting when you come back (up to 3 days). For shorter breaks, closing the window for 30+ minutes lets small things happen, and stepping away for an hour during business leaves a backlog waiting for you. The shop can't go bankrupt while you're gone.
+- **The shop runs while you're away.** With the window closed, the staff run a day on their own every 8 hours (adjustable), and a **shop log** of what happened is waiting when you come back (up to 3 days). The shop log groups what happened with you and without you into blocks of time, with guests, sales and leaked money. For shorter breaks, closing the window for 30+ minutes lets small things happen, and stepping away for an hour during business leaves a backlog waiting for you. The shop can't go bankrupt while you're gone.
 - **Skills ≠ personality.** Baking and service grow; personality stays true to the card. Even a pro can cause trouble.
 - **Friendship doesn't make it easy.** Bonds change dialogue and attitude, never the numbers.
 - **Inbox**: big decisions — new menu ideas, complaints, emergency loans — pile up (max 3).
@@ -103,6 +104,7 @@ Then open **Crumble** from the extensions (wand) menu.
 Under **Crumble** in the extension settings, or with the **⚙ button** at the top of the game window (both are the same settings):
 
 - **Owner name**: leave blank to use your persona name. You can also set it when you first open the shop and when you open a new shop after closing.
+- **Shop name**: also editable with [Rename] at the top of the Shop tab. Your staff may call the shop by name.
 - **Window size**: Auto (bigger on desktop) / Normal / Large / Extra large. The shop scene grows with the window.
 - **Language**: Auto (SillyTavern language) / 한국어 / English — AI-written text follows this too.
 - **AI connection**: Current connection (default) / one of your SillyTavern connection profiles. Only game text goes through that profile; your chat connection is never switched. If the profile is missing, the current connection is used.

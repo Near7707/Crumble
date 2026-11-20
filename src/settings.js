@@ -1,7 +1,7 @@
 // 설정 칸 — 확장 설정 칸(panel)과 게임 창 안(game) 두 곳에서 같은 값을 고친다.
 // 한쪽에서 바꾸면 onSettings 로 알려서 다른 쪽도 바로 다시 그린다.
 import { esc, ctx } from './util.js';
-import { S, save } from './state.js';
+import { S, save, ensureGame, shopName } from './state.js';
 import { L, resetLang } from './i18n.js';
 import { getProfiles } from './ai.js';
 
@@ -20,6 +20,15 @@ export function setBossName(v, scope) {
     s.bossNameAsked = true;
     save();
     emitSettings('bossName', scope);
+}
+
+/** 가게 이름 저장 (지금 가게) */
+export function setShopName(v, scope) {
+    const g = ensureGame();
+    g.name = String(v || '').trim().slice(0, 24);
+    g.nameAsked = true;
+    save();
+    emitSettings('shopName', scope);
 }
 
 export function profileOptions() {
@@ -56,6 +65,8 @@ export function fieldsHtml(scope) {
     return group(L('🏪 가게', '🏪 Shop')) +
         lab('boss', L('사장 이름', 'Owner name')) +
         `<input id="${id('boss')}" data-s="bossName" class="${sel}" type="text" maxlength="30" value="${esc(s.bossName || '')}" placeholder="${esc(L('비우면 페르소나 이름', 'Blank = persona name'))}">` +
+        lab('shop', L('가게 이름', 'Shop name')) +
+        `<input id="${id('shop')}" data-s="shopName" class="${sel}" type="text" maxlength="24" value="${esc(shopName(s.game))}" placeholder="${esc(L('예: 말랑 제과점', 'e.g. Little Crumb Bakery'))}">` +
         group(L('🖼 화면', '🖼 Display')) +
         lab('win', L('창 크기', 'Window size')) +
         `<select id="${id('win')}" data-s="winSize" class="${sel}">${opt('auto', s.winSize || 'auto', L('자동 (컴퓨터에서 크게)', 'Auto (bigger on desktop)'))}${opt('s', s.winSize, L('보통', 'Normal'))}${opt('m', s.winSize, L('크게', 'Large'))}${opt('l', s.winSize, L('아주 크게', 'Extra large'))}</select>` +
@@ -94,6 +105,7 @@ export function bindFields(box, scope) {
     const s = S();
     const on = (k, ev, fn) => box.querySelector(`[data-s="${k}"]`)?.addEventListener(ev, e => { fn(e.target); save(); emitSettings(k, scope); });
     box.querySelector('[data-s="bossName"]')?.addEventListener('change', e => setBossName(e.target.value, scope));
+    box.querySelector('[data-s="shopName"]')?.addEventListener('change', e => setShopName(e.target.value, scope));
     on('winSize', 'change', t => { s.winSize = t.value; });
     on('lang', 'change', t => { s.lang = t.value; resetLang(); });
     on('rememberZoom', 'change', t => { s.rememberZoom = t.checked; });

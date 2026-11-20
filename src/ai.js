@@ -1,7 +1,7 @@
 // AI 호출 — 글만 받는다. 숫자 계산은 rules.js가 한다.
 // 실패하면 null을 돌려주고, 부르는 쪽은 기본 문구로 계속 진행한다.
 import { ctx, parseJsonLoose, str, num } from './util.js';
-import { S, G, book, staffById, rel, menuInfo } from './state.js';
+import { S, G, book, staffById, rel, menuInfo, shopName } from './state.js';
 import { EVENT_KINDS, TAGS, isImportantKind, WEATHER, roleLabel } from './rules.js';
 import { AI_LANG, isKo, L } from './i18n.js';
 
@@ -61,6 +61,7 @@ function system() {
     return [
         'You write text for "Crumble", a small dessert-shop management game inside SillyTavern.',
         `The player is the shop owner ("${bossName()}"). The staff are characters taken from character cards.`,
+        ...(shopName(G()) ? [`The shop is called "${shopName(G())}". Staff may say its name now and then.`] : []),
         `Write ALL text values in ${AI_LANG()}.`,
         'Rules:',
         '- Every staff member acts true to their own manual: personality, speech style, values, flaws, attitude to the boss.',

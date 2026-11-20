@@ -638,6 +638,13 @@ export function closeDay(g, biz) {
         delta: { money: net, rep: Math.round(g.rep - biz.rep0), exp: biz.expLog.reduce((s, e) => s + e.n, 0) },
         diaries: {},
     });
+    // 가게 로그: 이날 "사장님 있음" 덩어리
+    const avg = avgPrice(g);
+    const leak = Math.round(((biz.eaten || 0) + (biz.freebie || 0) + (biz.left || 0)) * avg + (biz.burnt || 0) * ING_PRICE);
+    const ch = presentChunk(g);
+    ch.stats = { guests: biz.served, sales: biz.revenue, leak };
+    ch.items.push(...(biz.news || []).filter(n => !String(n.key).startsWith('ev')).slice(-14)
+        .map(n => ({ t: n.t, k: n.k, text: n.text, chip: n.chip || '', good: !!n.good, sid: n.sid || null })));
     for (const l of biz.log) if (l.delta?.rep >= 5 || l.delta?.rep <= -5 || ['reviewer', 'group', 'fight', 'inspection'].includes(l.kind)) g.stats.memorable.push({ day: g.day, title: l.title, text: l.result || l.line || l.choice });
     if (g.stats.memorable.length > 30) g.stats.memorable.splice(0, g.stats.memorable.length - 30);
     makeInbox(g);
@@ -725,6 +732,8 @@ export function fireStaff(id, quit = false) {
     g.inbox = g.inbox.filter(x => x.staffId !== id);
     remember(id, quit ? L('가게를 그만둠', 'Quit the shop') : L('해고됨', 'Was let go'));
     (g.leftStaff ??= []).push({ id, day: g.day, quit });
+    const nm = book(id)?.name || '';
+    logBoss(g, quit ? L(`${nm} 님이 가게를 그만뒀어요`, `${nm} quit the shop`) : L(`사장님이 ${nm} 님을 내보냈어요`, `You let ${nm} go`));
     assignRoles(g);
     save();
 }
@@ -759,7 +768,17 @@ export function autoDay(g) {
     if (careless && chance(.1)) picks.push({ id: uid('ev'), kind: 'nightThief', staffIds: [careless.id] });
     applyAutoPicks(g, picks);
     g.stats.autoDays += 1;
-    return { day: g.day, weather: g.weather, money: g.money - before, rep: 0, picks };
+    return { day: g.day, weather: g.weather, money: g.money - before, rep: 0, picks, guests: sell, sales: revenue, leak: autoLeak(picks, avg) };
+}
+
+/** 자리 비운 동안 새는 돈: 사건으로 잃은 돈 + 몰래 먹은 디저트 */
+function autoLeak(picks, avg) {
+    let v = 0;
+    for (const p of picks) {
+        if (p.delta?.money < 0) v -= p.delta.money;
+        if (p.kind === 'sneak') v += avg;
+    }
+    return Math.round(v);
 }
 
 /** 사장님 없을 때 일어난 일들 적용 (자동 운영 규칙: 작게, 0 밑으로 안 떨어짐) */
@@ -797,7 +816,7 @@ export function shortAway(g, minutes) {
     if (!picks.length) return null;
     applyAutoPicks(g, picks);
     save();
-    return { day: g.day, weather: g.weather, money: g.money - before, rep: 0, picks, short: true, minutes: Math.round(minutes), when };
+    return { day: g.day, weather: g.weather, money: g.money - before, rep: 0, picks, short: true, minutes: Math.round(minutes), when, leak: autoLeak(picks, avgPrice(g)) };
 }
 
 /** 자동 운영 일지 저장 (AI 글이 오면 채움) */
@@ -816,7 +835,34 @@ export function storeAway(days, texts, prev = null) {
         addJournal({ day: d.day, mode: 'auto', short: d.short ? d.minutes : 0, weather: d.weather, events: events.filter(e => e.day === d.day), delta: { money: d.money, rep: 0, exp: d.short ? 0 : g.staff.length } });
     }
     for (const e of events) if (e.staffId) remember(e.staffId, e.title + (e.text ? ' — ' + e.text : ''));
+    // 가게 로그: "사장님 없음" 덩어리 (이번에 생긴 일만)
+    const sum = k => days.reduce((a, d) => a + (d[k] || 0), 0);
+    addLogChunk(g, {
+        kind: 'away', days: dayList, short: short ? days[0].minutes || 0 : 0,
+        stats: short ? { leak: sum('leak') } : { guests: sum('guests'), sales: sum('sales'), leak: sum('leak') },
+        items: events.map(e => ({ t: e.time || '', k: 'work', text: e.title + (e.text ? ' — ' + e.text : ''), sid: e.staffId || null })),
+    });
     save();
+}
+
+// ---------- 가게 로그 (사장님 있을 때·없을 때를 시간 덩어리로) ----------
+const LOG_MAX = 12;
+export function addLogChunk(g, chunk) {
+    if (!g.shopLog) g.shopLog = [];
+    const c = { id: uid('lg'), at: Date.now(), items: [], ...chunk };
+    g.shopLog.unshift(c);
+    if (g.shopLog.length > LOG_MAX) g.shopLog.length = LOG_MAX;
+    return c;
+}
+/** 오늘 "사장님 있음" 덩어리 (없으면 만듦). 마감하면 손님·매출이 채워짐 */
+export function presentChunk(g) {
+    const top = g.shopLog?.[0];
+    if (top && top.kind === 'present' && top.day === g.day) return top;
+    return addLogChunk(g, { kind: 'present', day: g.day, stats: null });
+}
+/** 사장님이 한 일 (고용·해고, 나중에 대책 등) */
+export function logBoss(g, text, chip = '') {
+    presentChunk(g).items.push({ t: '', k: 'boss', text, chip, boss: true });
 }
 export function kindTitle(kind) {
     if (kind === 'nightThief') return L('밤도둑', 'Night burglar');

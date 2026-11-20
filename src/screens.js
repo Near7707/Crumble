@@ -261,10 +261,10 @@ function openScreen(box) {
         if (fresh) setTimeout(() => el.querySelector('.cr-nrow.fresh')?.classList.remove('fresh'), 2500);
     };
     // key가 같은 소식은 잠깐 동안 다시 안 띄움 (졸기·수다가 줄을 다 차지하지 않게)
-    const news = (text, k = 'work', chip = '', good = false, key = text) => {
+    const news = (text, k = 'work', chip = '', good = false, key = text, sid = null) => {
         if (!B || !text) return;
         if (biz.news.slice(-6).some(n => n.key === key && B.elapsed - n.at < 40000)) return;
-        biz.news.push({ t: clockStr(), at: B.elapsed, k, text, chip, good, key });
+        biz.news.push({ t: clockStr(), at: B.elapsed, k, text, chip, good, key, sid });
         if (biz.news.length > 40) biz.news.splice(0, biz.news.length - 40);
         drawNews(true);
     };
@@ -301,10 +301,10 @@ function openScreen(box) {
             const pBurn = .2 - s.bake * .018 + (hasTag(s.id, 'clumsy') ? .08 : 0) + ((s.mood ?? 60) < 35 ? .06 : 0) + ((s.fatigue ?? 30) > 75 ? .05 : 0);
             if (chance(Math.max(.02, pBurn))) {
                 const helper = friendSaves(g, biz, s.id);
-                if (helper) { sc.say(B.ents[helper] || e, line(helper, 'rescue'), 2200); sc.emo(e, 'heart'); news(F(L('{a} {b}의 실수를 막아 줬어요', '{a} saved {b}\'s batch'), { a: nmGa(helper), b: book(s.id)?.name }), 'good'); }
+                if (helper) { sc.say(B.ents[helper] || e, line(helper, 'rescue'), 2200); sc.emo(e, 'heart'); news(F(L('{a} {b}의 실수를 막아 줬어요', '{a} saved {b}\'s batch'), { a: nmGa(helper), b: book(s.id)?.name }), 'good', '', true, undefined, helper); }
                 else {
                     biz.burnt++; g.ing = Math.max(0, g.ing - 1); sc.emo(e, 'sweat'); sc.say(e, line(s.id, 'mistake'), 2200); setDoing(s, L('오븐 앞 · 태움', 'Oven · burnt it'), 'bad', L('태움!', 'Burnt!'));
-                    sc.float(e, L('재료 −1', 'Stock −1'), 'bad'); news(F(L('{n} 한 판을 태웠어요', '{n} burnt a batch'), { n: nmGa(s.id) }), 'bad', L('재료 −1', 'Stock −1'));
+                    sc.float(e, L('재료 −1', 'Stock −1'), 'bad'); news(F(L('{n} 한 판을 태웠어요', '{n} burnt a batch'), { n: nmGa(s.id) }), 'bad', L('재료 −1', 'Stock −1'), false, undefined, s.id);
                     await sc.wait(1400); B.ovenBy = null; chips(); return true;
                 }
             }
@@ -317,7 +317,7 @@ function openScreen(box) {
             if (B.shelf > 0 && chance(pSneak)) {
                 B.shelf--; biz.eaten++; sc.display(B.shelf); sc.emo(e, 'cake'); sc.say(e, line(s.id, 'sneak'), 2400);
                 setDoing(s, L('진열대 · 몰래 먹는 중', 'Display · sneaking a bite'), 'bad', L('몰래 먹는 중', 'Sneaking a bite'));
-                sc.float(e, L('재료 −1', 'Stock −1'), 'bad'); news(F(L('{n} 진열대 디저트를 몰래 먹었어요', '{n} snuck a dessert off the display'), { n: nmGa(s.id) }), 'bad', L('재료 −1', 'Stock −1'), false, 'sneak' + s.id);
+                sc.float(e, L('재료 −1', 'Stock −1'), 'bad'); news(F(L('{n} 진열대 디저트를 몰래 먹었어요', '{n} snuck a dessert off the display'), { n: nmGa(s.id) }), 'bad', L('재료 −1', 'Stock −1'), false, 'sneak' + s.id, s.id);
                 await sc.wait(2400); sc.emo(e, null);
             } else await sc.wait(500);
             return true;
@@ -340,13 +340,13 @@ function openScreen(box) {
                 const freebie = hasTag(s.id, 'kind', 'flatterer', 'chatty') ? .14 : .03;
                 // 덤·인사도 그 직원 말투로 (말투 대사가 없으면 아이콘만)
                 if (B.shelf > 0 && chance(freebie)) {
-                    B.shelf--; sc.display(B.shelf); sc.emo(e, 'note'); sc.say(e, line(s.id, 'freebie'), 1600); setTimeout(() => { if (e.icon === 'note') sc.emo(e, null); }, 1800);
-                    sc.float(e, L('재료 −1', 'Stock −1'), 'bad', 16); news(F(L('{n} 손님에게 몰래 덤을 줬어요', '{n} slipped a guest a freebie'), { n: nmGa(s.id) }), 'focus', L('재료 −1', 'Stock −1'), false, 'free' + s.id);
+                    B.shelf--; biz.freebie = (biz.freebie || 0) + 1; sc.display(B.shelf); sc.emo(e, 'note'); sc.say(e, line(s.id, 'freebie'), 1600); setTimeout(() => { if (e.icon === 'note') sc.emo(e, null); }, 1800);
+                    sc.float(e, L('재료 −1', 'Stock −1'), 'bad', 16); news(F(L('{n} 손님에게 몰래 덤을 줬어요', '{n} slipped a guest a freebie'), { n: nmGa(s.id) }), 'focus', L('재료 −1', 'Stock −1'), false, 'free' + s.id, s.id);
                 }
                 else if (chance(.25)) sc.say(e, line(s.id, 'thanks'), 1200);
                 if (hasTag(s.id, 'prickly') && chance(.15)) {
                     g.rep = clamp(g.rep - .5, 0, 100); sc.emo(q.e, 'sweat');
-                    sc.float(q.e, L('평판 ↓', 'Rep ↓'), 'bad', 18); news(F(L('{n} 손님에게 퉁명스럽게 굴었어요', '{n} was curt with a guest'), { n: nmGa(s.id) }), 'bad', L('평판 ↓', 'Rep ↓'), false, 'curt' + s.id);
+                    sc.float(q.e, L('평판 ↓', 'Rep ↓'), 'bad', 18); news(F(L('{n} 손님에게 퉁명스럽게 굴었어요', '{n} was curt with a guest'), { n: nmGa(s.id) }), 'bad', L('평판 ↓', 'Rep ↓'), false, 'curt' + s.id, s.id);
                 }
             } else {
                 q.done = 'soldout'; biz.soldout++; g.rep = clamp(g.rep - 1, 0, 100); sc.say(q.e, L('다 팔렸네…', 'All sold out…'), 1800); sc.emo(q.e, 'sweat');
@@ -363,7 +363,7 @@ function openScreen(box) {
             const seat = pick(seated), e = E(s);
             const leftCounter = (s.role === 'serve' || s.role === 'all');
             setDoing(s, L('테이블 · 손님이랑 수다', 'Table · chatting'), leftCounter ? 'bad' : 'work', leftCounter ? L('수다 중 · 계산대 빔', 'Chatting · counter empty') : L('수다 중', 'Chatting'));
-            if (leftCounter) news(F(L('{n} 손님이랑 수다 떠느라 계산대가 비었어요', '{n} is chatting; the counter is empty'), { n: nmGa(s.id) }), 'bad', '', false, 'chat' + s.id);
+            if (leftCounter) news(F(L('{n} 손님이랑 수다 떠느라 계산대가 비었어요', '{n} is chatting; the counter is empty'), { n: nmGa(s.id) }), 'bad', '', false, 'chat' + s.id, s.id);
             sc.emo(e, 'note');
             await walk(s, seat.chat);
             sc.say(e, line(s.id, 'chat'), 2600);
@@ -397,7 +397,7 @@ function openScreen(box) {
             if (!(tired || hasTag(s.id, 'lazy')) || !chance(.18)) return false;
             const e = E(s);
             setDoing(s, L('구석 · 꾸벅꾸벅', 'Corner · dozing'), 'sleep', L('조는 중', 'Dozing'));
-            news(F(L('{n} 구석에서 꾸벅꾸벅 졸아요', '{n} is dozing in the corner'), { n: nmGa(s.id) }), 'sleep', '', false, 'doze' + s.id);
+            news(F(L('{n} 구석에서 꾸벅꾸벅 졸아요', '{n} is dozing in the corner'), { n: nmGa(s.id) }), 'sleep', '', false, 'doze' + s.id, s.id);
             sc.emo(e, 'zzz'); if (chance(.5)) sc.say(e, line(s.id, 'tired'), 1600);
             await sc.wait(3800); sc.emo(e, null);
             return true;
@@ -548,7 +548,7 @@ ${canDelegate(ev) ? `<button type="button" class="cr-opt cr-optDel" data-b="dele
         {
             const tx = ev.text || fallbackEventText(ev);
             const c0 = deltaChips(res.delta || {}, ev, exp)[0];
-            news(res.result || `${book(ev.staffIds[0])?.name || ''} · ${tx.choices[ci]?.label || ''}`, res.interfere ? 'focus' : res.uncertain ? (res.ok ? 'good' : 'bad') : c0 ? (c0.good ? 'good' : 'bad') : 'work', c0?.t || '', !!c0?.good, 'res' + ev.id);
+            news(res.result || `${book(ev.staffIds[0])?.name || ''} · ${tx.choices[ci]?.label || ''}`, res.interfere ? 'focus' : res.uncertain ? (res.ok ? 'good' : 'bad') : c0 ? (c0.good ? 'good' : 'bad') : 'work', c0?.t || '', !!c0?.good, 'res' + ev.id, ev.staffIds[0]);
         }
         chips(); drawBacklog(); save();
         B.results.push({ ev, ci, mode, res, exp });

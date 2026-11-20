@@ -78,7 +78,8 @@ export function newGame(carryRelations = null) {
     const today = dayKey();
     const g = {
         id: uid('shop'),
-        name: 'Crumble',
+        name: '', // 가게 이름 (사장님이 정함)
+        nameAsked: false,
         openedOn: today,
         day: 1,
         dayKey: today,
@@ -102,6 +103,7 @@ export function newGame(carryRelations = null) {
         wageRate: 1,
         effects: [], // 며칠 이어지는 효과 {kind, until}
         pending: [], // 나중에 터질 일 {a,b,day,text}
+        shopLog: [], // 가게 로그 덩어리 {kind:'present'|'away', items:[]}
         recentEv: [], // 최근 나온 사건 {kind,day} — 같은 사건이 계속 나오지 않게
         notices: [], // 다음 날 아침 알림 (밤도둑 등)
         stats: { bestDay: null, maxRep: 40, directDays: 0, autoDays: 0, memorable: [] },
@@ -127,6 +129,8 @@ function migrate(g) {
 }
 
 // ---------- 직원 ----------
+/** 가게 이름 (예전 저장의 기본값 'Crumble'은 이름 없음으로 봄) */
+export const shopName = g => { const n = String(g?.name || '').trim(); return n && n !== 'Crumble' ? n : ''; };
 export const staffById = id => G()?.staff.find(s => s.id === id);
 export const book = id => S().staffBook[id];
 export const staffName = id => book(id)?.name || staffById(id)?.name || '직원';

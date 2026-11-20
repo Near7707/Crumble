@@ -3,21 +3,21 @@ import { esc, assetUrl, avatarUrl, ctx, clamp, dayKey } from './util.js';
 import { L, F, money, signedMoney, isKo } from './i18n.js';
 import {
     S, G, save, ensureGame, book, staffById, colorOf, hearts, bossRel, rel, nextColor,
-    MAX_STAFF, MAX_INBOX, menuInfo, ING_PRICE, skillNeed, newGame,
+    MAX_STAFF, MAX_INBOX, menuInfo, ING_PRICE, skillNeed, newGame, shopName,
 } from './state.js';
 import {
     TAGS, catchUp, storeAway, tagLabel, weatherLabel, roleLabel, workingStaff, inboxInfo, decideInbox,
-    fireStaff, assignRoles, nextDayNow, kindTitle, hasTag, shortAway,
+    fireStaff, assignRoles, nextDayNow, kindTitle, hasTag, shortAway, logBoss,
 } from './rules.js';
 import { faceChip, faceStyle, ICON } from './looks.js';
 import { createScene } from './scene.js';
 import { awayJournal, makeManual, FALLBACK_KEYS, bossLabel, remakeLines, cardExampleLines } from './ai.js';
 import { line, tapLine } from './lines.js';
 import { renderBusiness, resumeIfNeeded, businessActive, pauseBusiness, bizPaused, addBacklog } from './screens.js';
-import { fieldsHtml, bindFields, onSettings, personaName, setBossName } from './settings.js';
+import { fieldsHtml, bindFields, onSettings, personaName, setBossName, setShopName } from './settings.js';
 import { renderEnding } from './ending.js';
 
-export const view = { tab: 'shop', staffIdx: 0, staffSub: 'stats', journal: 'this', open: false, bizTab: 'biz' };
+export const view = { tab: 'shop', staffIdx: 0, staffSub: 'stats', journal: 'this', open: false, bizTab: 'biz', logFilter: 'all', logFold: {} };
 let root = null, scenes = [], shopTimer = null, awayBusy = false;
 
 export function addScene(s) { scenes.push(s); return s; }
@@ -126,15 +126,16 @@ export async function openWindow() {
     if (days) runAway(days);
     else if (short) runAway([short]);
     resumeIfNeeded();
-    // 사장 이름을 한 번도 안 정했으면 한 번만 물어봄 (가게 탭일 때만)
+    // 사장 이름·가게 이름을 한 번도 안 정했으면 한 번만 물어봄 (가게 탭일 때만)
     const g = G();
-    if (!S().bossNameAsked && ['ready', 'done'].includes(g.phase)) askBossName();
+    if ((!S().bossNameAsked || !g.nameAsked) && ['ready', 'done'].includes(g.phase)) askBossName();
 }
 export function closeWindow() {
     if (!root) return;
     root.classList.remove('open');
     view.open = false;
     markSeen(true);
+    view.logBase = undefined; // 다음에 열 때 "새 일" 기준을 다시 잡음
     if (businessActive()) { bizAutoPaused = false; pauseBusiness(true); return; } // 장면은 그대로 두고 멈춤 (다시 열면 "멈춤" 띠)
     killScenes();
 }
@@ -200,14 +201,16 @@ export function closeBtn() {
 
 function statusText(g) {
     if (g.away?.loading) return L('사장님 없음 · 일지 쓰는 중', 'Boss away · writing log');
-    if (g.phase === 'ready') return workingStaff(g).length ? L('오늘도 영업 가능!', 'Ready to open!') : L('직원이 필요해요', 'Need staff');
+    if (g.phase === 'ready') return workingStaff(g).length ? L('직원들끼리 영업 중', 'Staff running the shop') : L('직원이 필요해요', 'Need staff');
     if (g.phase === 'done') return L('오늘 영업 끝', 'Closed for today');
     return '';
 }
 function headHtml() {
     const g = G();
+    const nm = shopName(g);
     return `<header class="cr-top"><div class="cr-row">${logoHtml()}<span class="cr-money${g.money < 0 ? ' neg' : ''}">💰 ${money(g.money)}</span>${gearBtn()}${closeBtn()}</div>
-<div class="cr-row cr-status"><span class="cr-pill day">${F(L('{n}일째', 'Day {n}'), { n: g.day })}</span><span class="cr-pill wx">${weatherLabel(g.weather)}</span><span class="cr-pill st"><i></i>${statusText(g)}</span>${g.money < 0 ? `<span class="cr-pill debt">${F(L('빚 {n}/3일', 'Debt {n}/3'), { n: g.debtDays })}</span>` : ''}</div></header><div class="cr-drip"></div>`;
+<div class="cr-row cr-shopName"><b class="${nm ? '' : 'none'}">${esc(nm || L('이름 없는 가게', 'Unnamed shop'))}</b><button class="cr-nameBtn" type="button" data-act="renameShop">${nm ? L('이름 바꾸기', 'Rename') : L('이름 짓기', 'Name it')}</button></div>
+<div class="cr-row cr-status"><span class="cr-pill day">${F(L('{n}일째', 'Day {n}'), { n: g.day })}</span><span class="cr-pill wx">${weatherLabel(g.weather)}</span><span class="cr-pill st ${g.phase === 'ready' && !g.away?.loading ? 'staff' : ''}"><i></i>${statusText(g)}</span>${g.money < 0 ? `<span class="cr-pill debt">${F(L('빚 {n}/3일', 'Debt {n}/3'), { n: g.debtDays })}</span>` : ''}</div></header><div class="cr-drip"></div>`;
 }
 function tabsHtml() {
     const g = G();
@@ -281,17 +284,10 @@ function shopTab() {
     const g = G();
     const w = g.staff;
     let h = `<div class="cr-sceneHost" id="cr-shopScene"></div>`;
-    // 사장님 없을 때 일지
-    if (g.away && (g.away.events?.length || g.away.loading)) {
-        const n = g.away.events?.length || 0;
-        h += `<section class="cr-card"><div class="cr-ttl">🌙 ${L('사장님 없을 때', 'While you were away')}${!g.away.seen && n ? `<span class="cr-new">${F(L('새 일 {n}건', '{n} new'), { n })}</span>` : ''}</div>`;
-        if (g.away.loading) h += `<div class="cr-muted cr-loading">${L('직원들이 그동안 있었던 일을 정리하는 중…', 'The staff are writing up what happened…')}</div>`;
-        else h += g.away.events.map(e => `<div class="cr-log">${e.staffId && staffById(e.staffId) ? faceChip(e.staffId, 28) : '<span class="cr-face blank"></span>'}<div><div class="cr-logT">${e.staffId ? nameTag(e.staffId) : ''}${e.time ? `<span class="cr-muted">${esc(e.time)}</span>` : ''} <b>${esc(e.title)}</b></div>${e.text ? `<p>${esc(e.text)}</p>` : ''}</div></div>`).join('');
-        h += `<button class="cr-link" type="button" data-act="toJournal">${L('전체 기록 보기 ›', 'See full log ›')}</button></section>`;
-        g.away.seen = true;
-    }
+    // 오늘 영업 끝: 결과 카드가 먼저, 가게 로그는 그 아래
+    if (g.phase !== 'done') h += shopLogHtml(g);
     // 오늘 영업 끝: 그날 운영 결과 + [다음 날 시작]
-    if (g.phase === 'done') h += dayResultHtml(g);
+    if (g.phase === 'done') h += dayResultHtml(g) + shopLogHtml(g);
     // 수치 2×2
     const last = g.journal[0];
     h += `<section class="cr-grid2">
@@ -332,6 +328,58 @@ function dayResultHtml(g) {
 <div class="cr-chips"><span class="cr-chip">${L('손님', 'Guests')} <b>${sum.served ?? 0}</b></span><span class="cr-chip ${repD >= 0 ? 'good' : 'warn'}">${L('평판', 'Rep')} <b>${Math.round(rep0)} → ${Math.round(rep1)}</b> ${repD >= 0 ? '▲' : '▼'}${Math.abs(repD)}</span>${(t.closed?.discarded || sum.spoiled) ? `<span class="cr-chip warn">${L('버린 재료', 'Tossed')} <b>${(t.closed?.discarded || 0) + (sum.spoiled || 0)}</b></span>` : ''}</div>
 ${picks.length ? picks.map(n => `<div class="cr-nrow"><time>${esc(n.t)}</time><span class="cr-nd ${n.k}"></span><span class="cr-nt">${esc(n.text)}</span>${n.chip ? `<span class="cr-chip ${n.good ? 'up' : 'dn'}">${esc(n.chip)}</span>` : ''}</div>`).join('') : `<p class="cr-muted">${L('별일 없이 조용한 하루였어요.', 'A quiet day with nothing much going on.')}</p>`}
 <p class="cr-muted">${L('준비되면 아래 [다음 날 시작]을 눌러요. 창을 닫아 두면 시간이 지나는 만큼 직원들끼리 영업해요.', 'Press [Start the next day] when ready. With the window closed, the staff keep the shop going as time passes.')}</p></section>`;
+}
+
+// ---------- 가게 로그 (가게 탭) ----------
+const LOG_SHOW = 3;
+const isNewChunk = c => c.at > (view.logBase ?? 0);
+/** 맨 위(가장 최근) 덩어리만 펼친 채로, 지난 덩어리는 접어 둠. 사장님이 누르면 그대로 기억 */
+function logOpen(g, c) { return view.logFold[c.id] ?? (c === g.shopLog?.[0]); }
+function awayLen(min) { return min >= 90 ? F(L('약 {n}시간', '~{n}h'), { n: Math.round(min / 60) }) : F(L('약 {n}분', '~{n} min'), { n: min }); }
+function chunkTitle(c) {
+    if (c.kind === 'present') return c.stats ? F(L('사장님 있음 · {n}일째 영업', 'You were in · Day {n}'), { n: c.day }) : F(L('사장님 있음 · {n}일째', 'You were in · Day {n}'), { n: c.day });
+    if (c.short) return F(L('사장님 잠깐 없음 · {t}', 'Stepped out · {t}'), { t: awayLen(c.short) });
+    const d = c.days || [];
+    const range = d.length > 1 ? F(L('{a}~{b}일째', 'Days {a}–{b}'), { a: d[0], b: d[d.length - 1] }) : d.length ? F(L('{a}일째', 'Day {a}'), { a: d[0] }) : '';
+    const len = d.length > 1 ? F(L('직원들끼리 {n}일', 'staff ran {n} days'), { n: d.length }) : L('직원들끼리 하루', 'staff ran a day');
+    return `${L('사장님 없음', 'Boss away')} · ${len}` + (range ? ` <small>${range}</small>` : '');
+}
+function chunkStats(c) {
+    const st = c.stats; if (!st) return '';
+    const box = (t, v, cls = '') => `<div class="cr-lgStat"><small>${t}</small><b class="${cls}">${v}</b></div>`;
+    if (st.guests === undefined) return st.leak ? `<div class="cr-lgStats one">${box(L('새는 돈', 'Leaked'), money(st.leak), 'neg')}</div>` : '';
+    return `<div class="cr-lgStats">${box(L('손님', 'Guests'), F(L('{n}명', '{n}'), { n: st.guests }))}${box(L('매출', 'Sales'), money(st.sales || 0))}${box(L('새는 돈', 'Leaked'), money(st.leak || 0), st.leak ? 'neg' : '')}</div>`;
+}
+function logItem(it) {
+    const face = it.boss ? '<span class="cr-face boss" aria-hidden="true">👑</span>' : it.sid && staffById(it.sid) ? faceChip(it.sid, 24) : '<span class="cr-face blank"></span>';
+    return `<div class="cr-lgRow${it.boss ? ' boss' : ''}"><time>${esc(it.t || '')}</time>${face}<span class="cr-lgText"><span class="cr-nd ${esc(it.k || 'work')}"></span>${esc(it.text)}</span>${it.chip ? `<span class="cr-chip ${it.boss ? 'boss' : it.good ? 'up' : 'dn'}">${esc(it.chip)}</span>` : ''}</div>`;
+}
+function shopLogHtml(g) {
+    view.logBase ??= g.logSeenAt || 0;
+    const f = view.logFilter;
+    const all = (g.shopLog || []).filter(c => f === 'all' || c.kind === f);
+    const list = all.slice(0, LOG_SHOW);
+    const newN = (g.shopLog || []).filter(isNewChunk).reduce((n, c) => n + c.items.length, 0);
+    const seg = (id, ko, en) => `<button type="button" class="${f === id ? 'on' : ''}" data-act="logFilter" data-id="${id}" aria-pressed="${f === id}">${L(ko, en)}</button>`;
+    let h = `<section class="cr-card cr-shopLog" id="cr-shopLog"><div class="cr-ttl">📜 ${L('가게 로그', 'Shop log')}${newN ? `<span class="cr-new">${F(L('새 일 {n}건', '{n} new'), { n: newN })}</span>` : ''}<small>${L('마지막으로 본 뒤', 'Since you last looked')}</small></div>
+<div class="cr-seg sm">${seg('all', '전체', 'All')}${seg('present', '있을 때', 'With you')}${seg('away', '없을 때', 'Without you')}</div>`;
+    // 자리 비운 동안 일을 AI가 정리하는 중
+    if (g.away?.loading && f !== 'present') h += `<div class="cr-lgChunk away"><div class="cr-lgHead"><b>${L('사장님 없음 · 직원들끼리', 'Boss away · staff on their own')}</b></div><div class="cr-muted cr-loading">${L('직원들이 그동안 있었던 일을 정리하는 중…', 'The staff are writing up what happened…')}</div></div>`;
+    if (!list.length && !g.away?.loading) h += `<p class="cr-muted">${f === 'all' ? L('아직 기록이 없어요. 영업하거나 창을 닫아 두면 여기에 쌓여요.', 'Nothing yet. Run the shop or leave the window closed and things pile up here.') : L('이쪽 기록은 아직 없어요.', 'Nothing here yet.')}</p>`;
+    for (const c of list) {
+        const open = logOpen(g, c);
+        h += `<div class="cr-lgChunk ${c.kind}${isNewChunk(c) ? ' fresh' : ''}">
+<button type="button" class="cr-lgHead" data-act="logFold" data-id="${esc(c.id)}" aria-expanded="${open}"><b>${chunkTitle(c)}</b><span class="cr-muted">${open ? L('접기', 'Hide') : F(L('{n}개 · 펼치기', '{n} · Show'), { n: c.items.length })}</span></button>`;
+        if (open) h += chunkStats(c) + (c.items.length ? c.items.map(logItem).join('') : `<p class="cr-muted">${L('별일 없었어요.', 'Nothing much happened.')}</p>`);
+        h += `</div>`;
+    }
+    h += `<button class="cr-link" type="button" data-act="toJournal">${L('지난날은 일지 탭에서 ›', 'Older days are in the Log tab ›')}</button></section>`;
+    if (!g.away?.loading) { g.logSeenAt = Date.now(); if (g.away) g.away.seen = true; }
+    return h;
+}
+function redrawShopLog() {
+    const el = root?.querySelector('#cr-shopLog'); if (!el) return;
+    el.outerHTML = shopLogHtml(G());
 }
 
 function mountShopScene() {
@@ -480,7 +528,7 @@ export function closeModal() {
     const kind = m.classList.contains('open') ? m.dataset.kind : '';
     m.classList.remove('open'); m.dataset.kind = '';
     if (!root.querySelector('.cr-sheet').classList.contains('open')) root.querySelector('.cr-dim').classList.remove('on');
-    if (kind === 'boss' && !S().bossNameAsked) { S().bossNameAsked = true; save(); }
+    if (kind === 'boss' && (!S().bossNameAsked || !G()?.nameAsked)) { S().bossNameAsked = true; if (G()) G().nameAsked = true; save(); }
     if (kind === 'settings' && settingsPausedBiz) { settingsPausedBiz = false; pauseBusiness(false); }
     if ((kind === 'settings' || kind === 'boss') && pendingRender) { pendingRender = false; render(); }
 }
@@ -516,22 +564,41 @@ onSettings((key, scope) => {
     if (key === 'winSize') applyWinSize();
     // 확장 설정 칸에서 바꿨거나 언어가 바뀌면 창 안 설정도 다시 그림
     if (scope !== 'game' || key === 'lang') redrawSettingsModal();
-    if (!['lang', 'bossName', 'winSize'].includes(key)) return;
-    if (businessActive()) { if (key === 'lang' || key === 'bossName') toast(L('영업이 끝나면 화면에 반영돼요', 'Shows up after today\'s business')); return; }
+    if (!['lang', 'bossName', 'winSize', 'shopName'].includes(key)) return;
+    if (businessActive()) { if (key !== 'winSize') toast(L('영업이 끝나면 화면에 반영돼요', 'Shows up after today\'s business')); return; }
     softRender();
 });
 
 // ---------- 👑 사장 이름 정하기 (처음 한 번) ----------
 export function askBossName() {
-    const s = S(), pn = personaName();
-    const m = openModal(`<div class="cr-mtitle">👑 ${L('사장님 이름을 정해 주세요', 'What should your staff call you?')}<small>${L('직원들이 이 이름으로 불러요. 나중에 ⚙ 설정에서 바꿀 수 있어요.', 'Your staff will use this name. You can change it later in ⚙ Settings.')}</small></div>
-<input class="cr-input" type="text" maxlength="30" value="${esc(s.bossName || pn)}" placeholder="${esc(L('사장 이름', 'Owner name'))}" aria-label="${esc(L('사장 이름', 'Owner name'))}">
-${pn ? `<p class="cr-muted">${F(L('비워 두면 페르소나 이름({n})을 써요.', 'Leave blank to use your persona name ({n}).'), { n: esc(pn) })}</p>` : ''}
+    const s = S(), g = G(), pn = personaName();
+    const askBoss = !s.bossNameAsked, askShop = !g.nameAsked;
+    const m = openModal(`<div class="cr-mtitle">${askBoss ? '👑' : '🏪'} ${askBoss ? L('사장님 이름을 정해 주세요', 'What should your staff call you?') : L('가게 이름을 정해 주세요', 'Name your shop')}<small>${L('나중에 ⚙ 설정에서 바꿀 수 있어요.', 'You can change this later in ⚙ Settings.')}</small></div>
+${askBoss ? `<label class="cr-field">${L('사장 이름', 'Owner name')}<input class="cr-input" data-n="boss" type="text" maxlength="30" value="${esc(s.bossName || pn)}" placeholder="${esc(L('사장 이름', 'Owner name'))}"></label>
+${pn ? `<p class="cr-muted">${F(L('비워 두면 페르소나 이름({n})을 써요.', 'Leave blank to use your persona name ({n}).'), { n: esc(pn) })}</p>` : ''}` : ''}
+${askShop ? `<label class="cr-field">${L('가게 이름', 'Shop name')}<input class="cr-input" data-n="shop" type="text" maxlength="24" value="${esc(shopName(g))}" placeholder="${esc(L('예: 말랑 제과점', 'e.g. Little Crumb Bakery'))}"></label>
+<p class="cr-muted">${L('직원들이 가게 이름을 부를 수 있어요.', 'Your staff may call the shop by name.')}</p>` : ''}
 <div class="cr-actions"><button class="cr-btn" type="button" data-act="modalClose">${L('나중에', 'Later')}</button><button class="cr-pbtn sm" type="button" data-act="bossOk">${L('정했어요', 'Done')}</button></div>`, 'boss');
-    const inp = m.querySelector('input');
-    const ok = () => { setBossName(inp.value, 'game'); closeModal(); };
+    const ok = () => {
+        const b = m.querySelector('[data-n="boss"]'), sh = m.querySelector('[data-n="shop"]');
+        if (b) setBossName(b.value, 'game');
+        if (sh) setShopName(sh.value, 'game');
+        closeModal();
+    };
     m.querySelector('[data-act="bossOk"]').onclick = e => { e.stopPropagation(); ok(); };
+    m.querySelectorAll('input').forEach(inp => inp.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); ok(); } }));
+    m.querySelector('input')?.focus();
+}
+function askShopName() {
+    const g = G();
+    const m = openModal(`<div class="cr-mtitle">🏪 ${L('가게 이름', 'Shop name')}<small>${L('직원들이 가게 이름을 부를 수 있어요.', 'Your staff may call the shop by name.')}</small></div>
+<input class="cr-input" type="text" maxlength="24" value="${esc(shopName(g))}" placeholder="${esc(L('예: 말랑 제과점', 'e.g. Little Crumb Bakery'))}" aria-label="${esc(L('가게 이름', 'Shop name'))}">
+<div class="cr-actions"><button class="cr-btn" type="button" data-act="modalClose">${L('취소', 'Cancel')}</button><button class="cr-pbtn sm" type="button" data-act="shopOk">${L('바꾸기', 'Save')}</button></div>`, 'boss');
+    const inp = m.querySelector('input');
+    const ok = () => { setShopName(inp.value, 'game'); closeModal(); };
+    m.querySelector('[data-act="shopOk"]').onclick = e => { e.stopPropagation(); ok(); };
     inp.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); ok(); } });
+    inp.focus();
 }
 let toastT = null;
 export function toast(t, ms = 2600) {
@@ -602,6 +669,7 @@ function doHire(avatar, made, pts) {
     g.staff.push({ id: avatar, avatar, color: nextColor(), bake: clamp((baseBake ?? bake) + pts.bake, 1, 10), serve: clamp((baseServe ?? serve) + pts.serve, 1, 10), exp: { bake: 0, serve: 0 }, mood: 65, fatigue: 20, hiredDay: g.day, role: 'floor', absent: false });
     rel('boss', avatar);
     assignRoles(g);
+    logBoss(g, F(L('사장님이 {n} 님을 고용했어요', 'You hired {n}'), { n: made.name }));
     save();
     closeModal();
     view.tab = 'staff'; view.staffIdx = g.staff.length - 1; view.staffSub = 'stats';
@@ -769,6 +837,9 @@ async function onClick(e) {
         case 'settings': openSettings(); break;
         case 'modalClose': closeModal(); break;
         case 'toJournal': view.tab = 'journal'; view.journal = 'this'; render(); break;
+        case 'renameShop': askShopName(); break;
+        case 'logFilter': view.logFilter = t.dataset.id; redrawShopLog(); break;
+        case 'logFold': { const c = g.shopLog?.find(x => x.id === t.dataset.id); if (c) view.logFold[c.id] = !logOpen(g, c); redrawShopLog(); break; }
         case 'hire': if (g.staff.length < MAX_STAFF && !bizLocked()) hirePicker(); break;
         case 'hireRetry': hireFlow(t.dataset.id); break;
         case 'staffPrev': view.staffIdx = (view.staffIdx - 1 + g.staff.length) % g.staff.length; render(); break;
