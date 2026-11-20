@@ -44,6 +44,7 @@ const DEFAULT_SETTINGS = {
     businessMinutes: 4,
     skipWait: false,
     rememberZoom: false,
+    staffTags: true, // 0.2.0 영업 장면 직원 머리 위 글 이름표
     responseLength: 1600,
     profileId: '', // '' = 지금 연결 그대로
     bossName: '', // '' = 페르소나 이름

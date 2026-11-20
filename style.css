@@ -406,3 +406,44 @@ button.cr-ent { cursor: pointer; }
 .cr-backlog .cr-blT { flex: 1; min-width: 0; }
 .cr-backlog .cr-whoRow .cr-muted { flex: none; display: inline; white-space: nowrap; }
 .cr-backlog .cr-optDel { align-items: center; font-weight: 800; }
+
+/* ---------- 0.2.0 영업 중 잘 보이게 ---------- */
+/* A 직원 글 이름표 */
+.cr-stag { position: absolute; bottom: 66px; left: 50%; transform: translateX(-50%); display: inline-flex; align-items: center; gap: 3px; max-width: 120px; padding: 1px 6px 1px 5px; border-radius: 999px; background: var(--cr-card); border: 1.2px solid var(--cr-line2); font-size: 9.5px; line-height: 1.35; white-space: nowrap; z-index: 3; pointer-events: none; color: var(--cr-text); }
+.cr-stag b { font-weight: 700; overflow: hidden; text-overflow: ellipsis; }
+.cr-stag i { width: 6px; height: 6px; border-radius: 50%; flex: none; background: #B9A894; }
+.cr-stag.focus i { background: var(--cr-coral); }
+.cr-stag.work i { background: #6DB56B; }
+.cr-stag.bad { background: #FFE4E4; border-color: #F2B1B1; color: #8E2F3A; }
+.cr-stag.bad i { background: #E0475E; }
+.cr-stag.sleep i { background: #6B7FB0; }
+.cr-stag.move i { background: #B9A894; }
+.cr-ent.cr-hasTag .cr-bub { bottom: 84px; }
+.cr-ent.cr-hasTag .cr-ex { bottom: 84px; }
+/* B 손님 기다림 막대 */
+.cr-wbar { position: absolute; bottom: 64px; left: 50%; width: 30px; height: 6px; margin-left: -15px; border-radius: 999px; background: #F3E6D6; border: 1.2px solid var(--cr-brown); overflow: hidden; z-index: 3; pointer-events: none; }
+.cr-wbar i { display: block; height: 100%; width: 100%; transition: width .45s linear, background .3s; }
+/* C 떠오르는 숫자 */
+.cr-float { position: absolute; transform: translateX(-50%); font-size: 12px; font-weight: 900; white-space: nowrap; pointer-events: none; z-index: 2000; text-shadow: 0 0 3px #FFFDF9, 0 0 3px #FFFDF9, 0 0 2px #FFFDF9; animation: cr-floatUp 1.8s ease-out forwards; }
+.cr-float.good { color: #2E8B3A; }
+.cr-float.bad { color: #D2384C; }
+.cr-float.heart { color: #F06A8E; font-size: 16px; }
+.cr-float.leave { color: #fff; background: #E0475E; width: 20px; height: 20px; border-radius: 50%; text-align: center; line-height: 20px; font-size: 14px; text-shadow: none; border: 1.5px solid #fff; }
+@keyframes cr-floatUp { 0% { opacity: 0; margin-top: 6px; } 15% { opacity: 1; margin-top: 0; } 75% { opacity: 1; } 100% { opacity: 0; margin-top: -26px; } }
+/* D 지금 가게 소식 */
+.cr-news .cr-ttl { margin-bottom: 2px; }
+.cr-nrow { display: flex; align-items: center; gap: 6px; padding: 5px 4px; border-top: 1px dashed var(--cr-line); font-size: 12.5px; border-radius: 8px; }
+.cr-nrow:first-of-type { border-top: none; }
+.cr-nrow.fresh { background: #FFF4E6; animation: cr-newsIn .5s ease-out; }
+.cr-nrow time { flex: none; font-size: 11px; color: var(--cr-sub); min-width: 38px; }
+.cr-nrow .cr-nd { width: 8px; height: 8px; border-radius: 50%; flex: none; background: #B9A894; }
+.cr-nrow .cr-nd.focus { background: var(--cr-coral); }
+.cr-nrow .cr-nd.work, .cr-nrow .cr-nd.good { background: #6DB56B; }
+.cr-nrow .cr-nd.bad { background: #E0475E; }
+.cr-nrow .cr-nd.sleep { background: #6B7FB0; }
+.cr-nrow span.cr-nt { flex: 1; min-width: 0; }
+.cr-nrow .cr-chip { font-size: 11px; padding: 1px 7px; flex: none; }
+@keyframes cr-newsIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) {
+    .cr-float, .cr-nrow.fresh { animation: none !important; }
+}

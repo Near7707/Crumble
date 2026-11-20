@@ -233,6 +233,39 @@ export function createScene(host, opts = {}) {
         e.alerted = !!on;
     };
     api.fade = (e, on) => { e.el.style.opacity = on ? 1 : 0; };
+
+    // ---------- 0.2.0: 운영 상태 잘 보이게 ----------
+    // A 직원 글 이름표 — kind: focus(집중) / work(일) / bad(사고) / sleep(졸음) / move(이동·대기)
+    api.tag = (e, text, kind = 'work') => {
+        let t = e.el.querySelector('.cr-stag');
+        if (!text || settings().staffTags === false) { t?.remove(); e.el.classList.remove('cr-hasTag'); return; }
+        if (!t) { t = document.createElement('span'); t.className = 'cr-stag'; t.innerHTML = '<i></i><b></b>'; e.el.appendChild(t); }
+        t.className = 'cr-stag ' + kind;
+        t.querySelector('b').textContent = text;
+        e.el.classList.add('cr-hasTag');
+    };
+    // B 손님 기다림 막대 (0~1, 없애려면 null)
+    api.waitBar = (e, f) => {
+        let w = e.el.querySelector('.cr-wbar');
+        if (f == null) { w?.remove(); e.el.classList.remove('cr-hasTag'); return; }
+        if (!w) { w = document.createElement('span'); w.className = 'cr-wbar'; w.innerHTML = '<i></i>'; e.el.appendChild(w); e.el.classList.add('cr-hasTag'); }
+        const v = Math.max(0, Math.min(1, f));
+        const i = w.querySelector('i');
+        i.style.width = Math.round((1 - v) * 100) + '%';
+        i.style.background = v < .45 ? '#7CC47A' : v < .75 ? '#F2B24C' : '#E8616B';
+    };
+    // C 떠오르는 숫자·표시 — tone: good / bad / heart / leave
+    api.float = (e, text, tone = 'good', dy = 0) => {
+        if (!e || !text) return;
+        const [x, y] = tileC(e.c, e.r);
+        const f = document.createElement('div');
+        f.className = 'cr-float ' + tone;
+        f.textContent = text;
+        f.style.left = x + 'px'; f.style.top = (y - 78 - dy) + 'px';
+        f.setAttribute('aria-hidden', 'true');
+        world.appendChild(f);
+        setTimeout(() => f.remove(), 1900);
+    };
     api.clearEnts = () => { api.run++; api.ents.forEach(e => e.el.remove()); api.ents = []; };
 
     // ---------- 풍경 ----------
