@@ -1,12 +1,14 @@
 // 직접 영업: ① 아침 준비 → ② 영업 중 → ③ 마감 정산
 import { esc, clamp, chance, pick } from './util.js';
 import { L, F, money, signedMoney } from './i18n.js';
-import { G, S, save, book, staffById, colorOf, bossRel, menuInfo, ING_PRICE, skillNeed, addJournal } from './state.js';
+import { G, S, save, book, staffById, colorOf, bossRel, menuInfo, ING_PRICE, skillNeed, addJournal, addRel, remember } from './state.js';
 import {
     prepToday, expectedGuests, ingCost, pickEvents, fallbackEventText, resolveEvent, deltaText, newBiz, sellOne,
     closeDay, worries, finishClose, applyNotices, workingStaff, hasTag, friendSaves, EVENT_KINDS, guestMult,
     roleLabel, weatherLabel, staffPick, delegateIndex, canDelegate, pickReason, deltaChips, tagLabel,
+    applyEff, avgPrice,
 } from './rules.js';
+import { ACC, REACT, FOLLOW, FOLLOW_OF, pickReaction, followChance, MAX_ACC_PER_DAY, MAX_FOLLOW_PER_DAY, accText, moodLabel } from './orders.js';
 import { createScene } from './scene.js';
 import { faceChip } from './looks.js';
 import { line, tapLine } from './lines.js';
@@ -221,7 +223,8 @@ function openScreen(box) {
     const lay = (() => { const s = createScene(host, { size: g.size, height: 360, zoom: .85, focus: [6, 3], zoomKey: 'open' }); addScene(s); return s; })();
     const sc = lay;
     B = { sc, host, biz, running: true, queue: [], guests: [], shelf: 0, counterBy: null, ovenBy: null, active: null, wait: 0, elapsed: 0, ents: {},
-        backlog: [], sheetEv: null, results: [], resultOpen: false, holdPause: false };
+        backlog: [], sheetEv: null, results: [], resultOpen: false, holdPause: false,
+        acc: null, accAt: {}, accLast: -1e9, hold: {}, forceAcc: {} };
     const L0 = sc.lay;
     const W = workingStaff(g);
     const doing = {};
@@ -256,15 +259,16 @@ function openScreen(box) {
         const el = box.querySelector('#cr-news'); if (!el) return;
         const list = biz.news.slice(-4).reverse();
         el.innerHTML = `<div class="cr-ttl">📣 ${L('지금 가게 소식', 'Shop news')}<small>${L('최근 4개', 'Latest 4')}</small></div>` +
-            (list.length ? list.map((n, i) => `<div class="cr-nrow${i === 0 && fresh ? ' fresh' : ''}"><time>${esc(n.t)}</time><span class="cr-nd ${n.k}"></span><span class="cr-nt">${esc(n.text)}</span>${n.chip ? `<span class="cr-chip ${n.good ? 'up' : 'dn'}">${esc(n.chip)}</span>` : ''}</div>`).join('')
+            (list.length ? list.map((n, i) => `<div class="cr-nrow${i === 0 && fresh ? ' fresh' : ''}${n.follow ? ' follow' : ''}"><time>${esc(n.t)}</time><span class="cr-nd ${n.k}"></span><span class="cr-nt">${esc(n.text)}</span>${n.chip ? `<span class="cr-chip ${n.cc || (n.good ? 'up' : 'dn')}">${esc(n.chip)}</span>` : ''}</div>`).join('')
                 : `<p class="cr-muted">${L('아직 조용해요. 무슨 일이 생기면 여기에 떠요.', 'All quiet so far. Things that happen show up here.')}</p>`);
         if (fresh) setTimeout(() => el.querySelector('.cr-nrow.fresh')?.classList.remove('fresh'), 2500);
     };
     // key가 같은 소식은 잠깐 동안 다시 안 띄움 (졸기·수다가 줄을 다 차지하지 않게)
-    const news = (text, k = 'work', chip = '', good = false, key = text, sid = null) => {
+    // opt: { boss: 사장님이 한 일, follow: 아까 일 때문에 이어진 일, cc: 칩 색 }
+    const news = (text, k = 'work', chip = '', good = false, key = text, sid = null, opt = {}) => {
         if (!B || !text) return;
         if (biz.news.slice(-6).some(n => n.key === key && B.elapsed - n.at < 40000)) return;
-        biz.news.push({ t: clockStr(), at: B.elapsed, k, text, chip, good, key, sid });
+        biz.news.push({ t: clockStr(), at: B.elapsed, k, text, chip, good, key, sid, ...opt });
         if (biz.news.length > 40) biz.news.splice(0, biz.news.length - 40);
         drawNews(true);
     };
@@ -275,7 +279,7 @@ function openScreen(box) {
         const spot = s.role === 'bake' ? L0.spots.oven : s.role === 'serve' || s.role === 'all' ? L0.spots.counter : L0.idle[0];
         const e = sc.ent({
             staffId: s.id, label: book(s.id)?.name, c: spot[0], r: spot[1],
-            onTap: e => { if (e.alerted) { openEvent(pendingFor(s.id)); return; } sc.jump(e); sc.say(e, tapLine(s.id)); },
+            onTap: e => { if (B.acc?.sid === s.id && !B.acc.open) { openTalk(); return; } if (e.alerted) { openEvent(pendingFor(s.id)); return; } sc.jump(e); sc.say(e, tapLine(s.id)); },
         });
         B.ents[s.id] = e;
     }
@@ -313,12 +317,15 @@ function openScreen(box) {
             sc.emo(e, null); setDoing(s, L('진열대로 옮기는 중', 'Stocking the display'), 'move', L('진열하러', 'Stocking'));
             await walk(s, L0.spots.display);
             B.shelf += batch; sc.display(B.shelf); chips();
-            const pSneak = hasTag(s.id, 'glutton') ? .25 : hasTag(s.id, 'lazy') ? .08 : .03;
+            const pSneak = (hasTag(s.id, 'glutton') ? .25 : hasTag(s.id, 'lazy') ? .08 : .03) * mod(s, 'sneak');
             if (B.shelf > 0 && chance(pSneak)) {
                 B.shelf--; biz.eaten++; sc.display(B.shelf); sc.emo(e, 'cake'); sc.say(e, line(s.id, 'sneak'), 2400);
                 setDoing(s, L('진열대 · 몰래 먹는 중', 'Display · sneaking a bite'), 'bad', L('몰래 먹는 중', 'Sneaking a bite'));
                 sc.float(e, L('재료 −1', 'Stock −1'), 'bad'); news(F(L('{n} 진열대 디저트를 몰래 먹었어요', '{n} snuck a dessert off the display'), { n: nmGa(s.id) }), 'bad', L('재료 −1', 'Stock −1'), false, 'sneak' + s.id, s.id);
-                await sc.wait(2400); sc.emo(e, null);
+                const a = await accident(s, 'sneak');
+                if (a) return true;
+                if (a === null) await sc.wait(2400);
+                sc.emo(e, null);
             } else await sc.wait(500);
             return true;
         },
@@ -334,14 +341,16 @@ function openScreen(box) {
             sc.work(e, true); sc.emo(e, null);
             await sc.wait(Math.max(700, 2100 - s.serve * 120) * fat(s));
             sc.work(e, false);
+            let gaveFree = false;
             if (B.shelf > 0) {
                 B.shelf--; sc.display(B.shelf); const sold = sellOne(g, biz); sc.emo(q.e, 'bag'); q.done = 'ok';
                 sc.waitBar(q.e, null); sc.float(e, '+' + money(sold.p), 'good'); sc.float(q.e, '♥', 'heart');
-                const freebie = hasTag(s.id, 'kind', 'flatterer', 'chatty') ? .14 : .03;
+                const freebie = (hasTag(s.id, 'kind', 'flatterer', 'chatty') ? .14 : .03) * mod(s, 'freebie');
                 // 덤·인사도 그 직원 말투로 (말투 대사가 없으면 아이콘만)
                 if (B.shelf > 0 && chance(freebie)) {
                     B.shelf--; biz.freebie = (biz.freebie || 0) + 1; sc.display(B.shelf); sc.emo(e, 'note'); sc.say(e, line(s.id, 'freebie'), 1600); setTimeout(() => { if (e.icon === 'note') sc.emo(e, null); }, 1800);
                     sc.float(e, L('재료 −1', 'Stock −1'), 'bad', 16); news(F(L('{n} 손님에게 몰래 덤을 줬어요', '{n} slipped a guest a freebie'), { n: nmGa(s.id) }), 'focus', L('재료 −1', 'Stock −1'), false, 'free' + s.id, s.id);
+                    gaveFree = true;
                 }
                 else if (chance(.25)) sc.say(e, line(s.id, 'thanks'), 1200);
                 if (hasTag(s.id, 'prickly') && chance(.15)) {
@@ -354,12 +363,13 @@ function openScreen(box) {
                 sc.say(e, line(s.id, 'soldout'), 1800);
             }
             B.queue.shift(); shiftQueue(); B.counterBy = null; chips();
+            if (gaveFree) await accident(s, 'freebie');
             return true;
         },
         async chat(s) {
             if (!hasTag(s.id, 'chatty') && !(hasTag(s.id, 'kind') && chance(.3))) return false;
             const seated = L0.seats.filter(x => x.g);
-            if (B.queue.length || !seated.length || !chance(.22)) return false;
+            if (B.queue.length || !seated.length || !chance(.22 * mod(s, 'chat'))) return false;
             const seat = pick(seated), e = E(s);
             const leftCounter = (s.role === 'serve' || s.role === 'all');
             setDoing(s, L('테이블 · 손님이랑 수다', 'Table · chatting'), leftCounter ? 'bad' : 'work', leftCounter ? L('수다 중 · 계산대 빔', 'Chatting · counter empty') : L('수다 중', 'Chatting'));
@@ -367,7 +377,9 @@ function openScreen(box) {
             sc.emo(e, 'note');
             await walk(s, seat.chat);
             sc.say(e, line(s.id, 'chat'), 2600);
-            await sc.wait(4200);
+            const a = leftCounter ? await accident(s, 'chat') : null;
+            if (a) return true;
+            if (a === null) await sc.wait(4200);
             sc.emo(e, null);
             return true;
         },
@@ -394,12 +406,15 @@ function openScreen(box) {
         },
         async doze(s) {
             const tired = (s.fatigue ?? 30) > 70 || (t.crowd && chance(.3));
-            if (!(tired || hasTag(s.id, 'lazy')) || !chance(.18)) return false;
+            if (!(tired || hasTag(s.id, 'lazy')) || !chance(.18 * mod(s, 'doze'))) return false;
             const e = E(s);
             setDoing(s, L('구석 · 꾸벅꾸벅', 'Corner · dozing'), 'sleep', L('조는 중', 'Dozing'));
             news(F(L('{n} 구석에서 꾸벅꾸벅 졸아요', '{n} is dozing in the corner'), { n: nmGa(s.id) }), 'sleep', '', false, 'doze' + s.id, s.id);
             sc.emo(e, 'zzz'); if (chance(.5)) sc.say(e, line(s.id, 'tired'), 1600);
-            await sc.wait(3800); sc.emo(e, null);
+            const a = await accident(s, 'doze');
+            if (a) return true;
+            if (a === null) await sc.wait(3800);
+            sc.emo(e, null);
             return true;
         },
         async idle(s) {
@@ -427,7 +442,9 @@ function openScreen(box) {
     const brain = async s => {
         while (B.running && !sc.dead) {
             try {
-                if (E(s).alerted) { await sc.wait(500); continue; }
+                if ((B.hold[s.id] || 0) > B.elapsed) { await sc.wait(300); continue; }
+                if (B.forceAcc[s.id] && !B.acc) { const k = B.forceAcc[s.id]; delete B.forceAcc[s.id]; await againAcc(s, k); continue; }
+                if (E(s).alerted && B.acc?.sid !== s.id) { await sc.wait(500); continue; }
                 for (const k of PLAN[s.role] || PLAN.floor) if (await tasks[k](s)) break;
             } catch (err) { if (err === 'stop') return; console.error('[Crumble]', err); try { await sc.wait(1000); } catch { return; } }
         }
@@ -506,7 +523,7 @@ function openScreen(box) {
     const refreshAlerts = () => {
         for (const s of W) {
             const e = B.ents[s.id]; if (!e) continue;
-            const on = B.backlog.some(x => x.staffIds[0] === s.id) || B.active?.staffIds[0] === s.id;
+            const on = B.backlog.some(x => x.staffIds[0] === s.id) || B.active?.staffIds[0] === s.id || B.acc?.sid === s.id;
             if (!!e.alerted !== on) sc.alert(e, on);
         }
     };
@@ -621,6 +638,192 @@ ${B.backlog.map(x => `<div class="cr-whoRow">${faceChip(x.staffIds[0], 28)}<span
         return picks.length;
     };
 
+
+    // ======================= 0.2.4 성격 사고 → 사장님 지시 → 반응 → 이어지는 일 =======================
+    // B.acc = 지금 "!"가 떠 있는 성격 사고 { sid, kind, open, done, order, react }
+    biz.mods = biz.mods || {};
+    biz.follows = biz.follows || [];
+    biz.accN = biz.accN || 0;
+    const mod = (s, k) => biz.mods[s.id]?.[k] ?? 1;
+    const setMod = (s, k, v) => { (biz.mods[s.id] ??= {})[k] = v; };
+    const homeOf = s => (s.role === 'bake' ? L0.spots.oven : s.role === 'serve' || s.role === 'all' ? L0.spots.counter : L0.idle[0]);
+    const goalPos = (s, goal) => ({ oven: L0.spots.oven, counter: L0.spots.counter, display: L0.spots.display, tables: (L0.seats.find(x => x.g) || L0.seats[0])?.chat, home: homeOf(s) })[goal] || null;
+    const nmOf = id => book(id)?.name || '';
+    const K2 = (a, b) => [a, b];
+    const T = (pair, id, carried = false) => accText(pair, nmOf(id), iga(nmOf(id)), carried);
+    // 효과 적용 → 장면에 숫자 띄우기. 첫 칩 글을 돌려줌
+    const applyAcc = (s, eff = {}) => {
+        const e = E(s); const parts = [];
+        let { shelf = 0, sales = 0, burnt = 0, ...rest } = eff;
+        if (shelf < 0) {
+            const n = -shelf, fromShelf = Math.min(B.shelf, n);
+            B.shelf -= fromShelf; g.ing = Math.max(0, g.ing - (n - fromShelf)); sc.display(B.shelf);
+            parts.push({ t: L('재료 ', 'Stock ') + '−' + n, good: false });
+        }
+        if (burnt) { biz.burnt += burnt; }
+        if (sales > 0) {
+            const v = Math.round(avgPrice(g) * sales / 100) * 100;
+            g.money += v; biz.revenue += v; biz.served += sales;
+            parts.push({ t: '+' + money(v), good: true });
+        }
+        const d = applyEff(g, rest, { staffIds: [s.id], kind: 'acc' }, biz);
+        parts.push(...deltaChips(d, { staffIds: [s.id] }));
+        parts.forEach((c, i) => setTimeout(() => { if (e?.el.isConnected) sc.float(e, c.t, c.good ? 'good' : 'bad', (i % 2) * 18); }, i * 800));
+        chips();
+        return parts[0]?.t || '';
+    };
+    const canAcc = (s, force) => !!B.running && !B.acc && !E(s).alerted && !B.sheetEv && !B.resultOpen && B.elapsed < D * .9 &&
+        (force || (biz.accN < MAX_ACC_PER_DAY && B.elapsed - (B.accAt[s.id] ?? -1e9) > 60000 && B.elapsed - B.accLast > 25000));
+    /** "!"를 띄우고 잠깐 기다림. 사장님이 누르면 지시 → 반응까지 하고 true / 안 누르고 지나가면 false / 못 띄우면 null */
+    const accident = async (s, kind, force = false) => {
+        if (!canAcc(s, force)) return null;
+        const e = E(s);
+        B.acc = { sid: s.id, kind, open: false, done: false };
+        B.accAt[s.id] = B.accLast = B.elapsed; biz.accN++;
+        sc.alert(e, true);
+        e.el.setAttribute('aria-label', F(L('{n} — 눌러서 한마디 하기', '{n} — tap to step in'), { n: nmOf(s.id) }));
+        let w = 0;
+        while (w < 8000 && !B.acc.open) { await sc.wait(250); w += 250; }
+        if (!B.acc.open) { B.acc = null; refreshAlerts(); return false; }
+        while (!B.acc.done) await sc.wait(200);
+        const A = B.acc; B.acc = null; refreshAlerts();
+        if (A.order < 0) { sc.emo(e, null); return false; }
+        await runReaction(s, A);
+        return true;
+    };
+    const openTalk = () => {
+        const A = B.acc; if (!A || A.open || B.sheetEv || B.resultOpen) return;
+        A.open = true;
+        pauseBusiness(true, false);
+        const def = ACC[A.kind], sid = A.sid, st = staffById(sid);
+        openSheet(`<div class="cr-row"><span class="cr-evTag staff">${esc(L(...def.title))}</span><span class="cr-muted" style="margin-left:auto">${L('가게가 잠깐 멈춰 있어요', 'The shop is paused')}</span></div>
+<div class="cr-resWho">${faceChip(sid, 40)}<div><b>${esc(nmOf(sid))}</b> <span class="cr-muted">${esc(roleLabel(st?.role))}</span> ${heartRow(bossRel(sid))}<div class="cr-tags">${(book(sid)?.tags || []).map(t => `<span class="cr-tag">${esc(tagLabel(t))}</span>`).join('')}<span class="cr-tag gray">${esc(moodLabel(sid))}</span></div></div></div>
+<p class="cr-situ">${esc(T(def.situ, sid))}</p>
+<div class="cr-say2"><span class="cr-face boss" aria-hidden="true">👑</span><p>${esc(L(...def.boss))}</p></div>
+<div class="cr-say2">${faceChip(sid, 30)}<p>${esc(line(sid, def.key))}</p></div>
+<div class="cr-ttl sm" style="margin-top:10px">${F(L('{n}에게 뭐라고 할까요?', 'What do you tell {n}?'), { n: nmOf(sid) })}</div>
+<div class="cr-ordGrid">${def.orders.map((o, i) => `<button type="button" class="cr-opt cr-ord" data-b="ord" data-i="${i}">${esc(L(...o.label))}</button>`).join('')}</div>
+<div class="cr-actions"><button type="button" class="cr-btn" data-b="ordSkip">${L('그냥 두기', 'Let it go')}</button></div>
+<p class="cr-muted cr-center">${L('지시는 지금 이 순간만이에요. 어떻게 받아들일지는 성격·기분·사장님과 사이에 따라 달라요.', 'This is just for right now. How they take it depends on their personality, mood, and how they feel about you.')}</p>`, true);
+    };
+    const chooseOrder = i => {
+        const A = B.acc; if (!A) return;
+        A.order = i; A.done = true;
+        if (i >= 0) {
+            A.react = pickReaction(A.sid, A.kind, i);
+            const o = ACC[A.kind].orders[i];
+            news(F(L('사장님 → {n}: "{o}"', 'You → {n}: "{o}"'), { n: nmOf(A.sid), o: L(...o.label) }), 'boss', L(...REACT[A.react].label), false, 'ord' + B.elapsed, A.sid, { boss: true, cc: REACT[A.react].chip });
+            remember(A.sid, F(L('사장님이 "{o}"라고 함 → {r}', 'Boss said "{o}" → {r}'), { o: L(...o.label), r: L(...REACT[A.react].label) }));
+        }
+        closeSheet(); afterSheet(); save();
+    };
+    // 하던 사고를 한 번 더 (미루거나 안 들을 때)
+    const repeatAcc = (s, kind) => {
+        const e = E(s);
+        if ((kind === 'sneak' || kind === 'freebie') && B.shelf > 0) {
+            B.shelf--; sc.display(B.shelf);
+            if (kind === 'sneak') { biz.eaten++; sc.emo(e, 'cake'); } else { biz.freebie = (biz.freebie || 0) + 1; sc.emo(e, 'note'); }
+            sc.float(e, L('재료 −1', 'Stock −1'), 'bad'); chips();
+        } else if (kind === 'doze') sc.emo(e, 'zzz');
+        else if (kind === 'chat') sc.emo(e, 'note');
+    };
+    const runReaction = async (s, A) => {
+        const e = E(s), def = ACC[A.kind], o = def.orders[A.order], R0 = REACT[A.react];
+        sc.say(e, line(s.id, R0.line), 2600);
+        sc.tag(e, L(...R0.start), R0.tag);
+        const doing = () => setDoing(s, L(...o.doing), o.dk, L(...o.doing));
+        if (A.react === 'obey') {
+            await sc.wait(900);
+            const p = o.goal === 'stay' ? null : goalPos(s, o.goal); if (p) await walk(s, p);
+            sc.emo(e, null); doing(); applyAcc(s, o.obey);
+            setMod(s, A.kind, o.mul ?? .35);
+            await sc.wait(1600);
+        } else if (A.react === 'delay') {
+            await sc.wait(1300); repeatAcc(s, A.kind);
+            await sc.wait(2600);
+            const p = o.goal === 'stay' ? null : goalPos(s, o.goal);
+            setDoing(s, L('느릿느릿', 'Dragging feet'), 'move', L(...o.doing) + L(' · 느릿느릿', ' · slowly'));
+            if (p) await sc.go(e, p, .95);
+            sc.emo(e, null); applyAcc(s, o.obey);
+            sc.tag(e, L(...o.doing) + L(' · 느릿느릿', ' · slowly'), o.dk);
+            setMod(s, A.kind, Math.max(o.mul ?? .35, .7));
+            await sc.wait(1600);
+        } else if (A.react === 'refuse') {
+            applyAcc(s, { relBoss: -3 });
+            await sc.wait(1400); repeatAcc(s, A.kind);
+            await sc.wait(2200); repeatAcc(s, A.kind);
+            news(F(L('{n} 사장님 말을 안 듣고 하던 걸 계속해요', '{n} ignored you and kept at it'), { n: nmGa(s.id) }), 'bad', '', false, 'refuse' + s.id, s.id);
+            setMod(s, A.kind, 1.3);
+            await sc.wait(1800); sc.emo(e, null);
+        } else {
+            const tw = o.twist;
+            await sc.wait(900);
+            const p = tw.goal === 'stay' ? null : goalPos(s, tw.goal); if (p) await walk(s, p);
+            sc.emo(e, null);
+            setDoing(s, L(...tw.tag), 'twist', L(...tw.tag));
+            const c = applyAcc(s, tw.eff);
+            news(T(tw.text, s.id), 'twist', c, false, 'tw' + B.elapsed, s.id, { cc: 'twist' });
+            setMod(s, A.kind, tw.mul ?? 1);
+            await sc.wait(tw.long ? 6000 : 2400);
+        }
+        scheduleFollow(s, A, o);
+        save();
+    };
+    // ---------- 이어지는 일: 시간이 지나면 저절로 (가끔만, 직원당 하루 1개 · 가게 하루 2개) ----------
+    const scheduleFollow = (s, A, o) => {
+        if (biz.follows.length >= MAX_FOLLOW_PER_DAY || biz.follows.some(x => x.sid === s.id)) return;
+        if (!chance(followChance(A.react, o))) return;
+        biz.follows.push({ sid: s.id, kind: A.kind, react: A.react, order: A.order, scold: !!o.scold, at: B.elapsed + D * (.18 + Math.random() * .14), fired: false });
+    };
+    const fireFollow = f => {
+        const s = W.find(x => x.id === f.sid); const e = s && E(s);
+        if (!e) return;
+        const type = FOLLOW_OF[f.react], def = ACC[f.kind], FL = FOLLOW[type];
+        const say = (txt, k, chip) => news(txt, k, L(...FL.label), false, 'fl' + f.sid + B.elapsed, f.sid, { follow: true, cc: FL.chip, sub: chip });
+        if (type === 'again') {
+            say(T(def.again, s.id, f.carried), 'bad');
+            B.forceAcc[s.id] = f.kind;
+        } else if (type === 'fight') {
+            const other = W.filter(x => x.id !== s.id && B.ents[x.id]);
+            if (!other.length) { applyAcc(s, { relBoss: -3 }); say(F(L('{w} 일로 {n} 사장님 흉을 봤어요', '{n} grumbled about you after {w}'), { w: f.carried ? L('어제', 'yesterday\'s') : L('아까', 'earlier'), n: nmGa(s.id) }), 'bad'); return; }
+            const o2 = pick(other), e2 = E(o2);
+            addRel(s.id, o2.id, -6, L('지시 안 들은 일로 다툼', 'Squabbled after ignoring the boss'));
+            B.hold[s.id] = B.hold[o2.id] = B.elapsed + 5000;
+            sc.tag(e, L('다투는 중', 'Squabbling'), 'bad'); sc.tag(e2, (o2.role === 'serve' || o2.role === 'all') ? L('다투는 중 · 계산대 빔', 'Squabbling · counter empty') : L('다투는 중', 'Squabbling'), 'bad');
+            sc.say(e2, L('아까 그거 너 때문이잖아!', 'That was your fault earlier!'), 2600);
+            setTimeout(() => { if (e.el.isConnected) sc.say(e, line(s.id, 'rRefuse'), 2400); }, 1600);
+            sc.float(e2, L('둘 사이 ↓', 'Their bond ↓'), 'bad');
+            say(F(L('{w} 일로 {a} · {b} 둘이 다퉜어요', '{a} and {b} squabbled over what happened {w}'), { w: f.carried ? L('어제', 'yesterday') : L('아까', 'earlier'), a: nmOf(s.id), b: nmOf(o2.id) }), 'bad');
+        } else {
+            const x = f.scold && type === 'unexpected'
+                ? { text: [`{w} 혼난 {n} 시무룩하게 일하다 실수를 했어요`, '{n}, still sulking after being scolded {w}, slipped up'], eff: { ing: -1, mood: -4 }, tag: K2('시무룩', 'Sulking') }
+                : def[type];
+            sc.tag(e, x.tag ? L(...x.tag) : L(...FL.label), type === 'lucky' ? 'work' : 'bad');
+            sc.emo(e, type === 'lucky' ? 'note' : 'sweat');
+            const c = applyAcc(s, x.eff);
+            say(T(x.text, s.id, f.carried), FL.k, c);
+            if (type === 'lucky') sc.say(e, line(s.id, 'rTwist'), 2200);
+            setTimeout(() => { if (e.el.isConnected) sc.emo(e, null); }, 2600);
+        }
+        save();
+    };
+    // 다음 날로 넘어온 이어지는 일 (사장님이 영업할 때만)
+    const againAcc = async (s, kind) => {
+        const e = E(s);
+        if (kind === 'sneak') { await walk(s, L0.spots.display); setDoing(s, L('진열대 · 또 몰래 먹는 중', 'Display · sneaking again'), 'bad', L('또 몰래 먹는 중', 'Sneaking again')); }
+        else if (kind === 'chat') { const p = goalPos(s, 'tables'); if (p) await walk(s, p); setDoing(s, L('테이블 · 또 수다', 'Table · chatting again'), 'bad', L('또 수다 중', 'Chatting again')); }
+        else if (kind === 'doze') setDoing(s, L('또 꾸벅꾸벅', 'Dozing again'), 'sleep', L('또 조는 중', 'Dozing again'));
+        else setDoing(s, L('또 덤 주는 중', 'Freebie again'), 'bad', L('또 덤 주는 중', 'Freebie again'));
+        repeatAcc(s, kind);
+        const a = await accident(s, kind, true);
+        if (a === null) await sc.wait(2400);
+        sc.emo(e, null);
+    };
+    if (g.pendingFollow?.length) {
+        g.pendingFollow.forEach((f, i) => biz.follows.push({ ...f, at: D * (.1 + i * .12 + Math.random() * .06), fired: false }));
+        g.pendingFollow = [];
+    }
+
     // ---------- 시계 ----------
     const clockEl = box.querySelector('#cr-clock'), fill = box.querySelector('#cr-tfill');
     function clockStr(long) {
@@ -655,17 +858,23 @@ ${B.backlog.map(x => `<div class="cr-whoRow">${faceChip(x.staffIds[0], 28)}<span
                         news(F(L('{n}에게 일이 생겼어요 · {t}', 'Something came up for {n}: {t}'), { n: book(ev.staffIds[0])?.name || '', t: (ev.text || fallbackEventText(ev)).title }), 'focus', '', false, 'ev' + ev.id);
                         e.el.setAttribute('aria-label', F(L('{n} — 사건 발생, 눌러서 보기', '{n} — something happened, tap to see'), { n: book(ev.staffIds[0])?.name }));
                     }
-                } else if (!B.sheetEv) {
+                } else if (!B.sheetEv && !B.acc?.open) {
                     B.wait += 250;
                     if (B.wait > Math.max(20000, D * .1)) finishEvent(0, 'auto', B.active);
                 }
-                if (tt >= 1 && !B.active && (B.guests.length === 0 || tt >= 1.12)) { await finish(); return; }
+                if (!B.acc && !B.sheetEv && !B.resultOpen && tt < .97) {
+                    const f = (biz.follows || []).find(x => !x.fired && B.elapsed >= x.at);
+                    if (f) { f.fired = true; fireFollow(f); }
+                }
+                if (tt >= 1 && !B.active && !B.acc && (B.guests.length === 0 || tt >= 1.12)) { await finish(); return; }
             }
         } catch { /* 끝 */ }
     };
     const finish = async () => {
         B.running = false;
         biz.finished = true;
+        // 영업이 먼저 끝나서 못 터진 "이어지는 일"은 다음 날로 (직원들끼리 영업한 날엔 사라짐)
+        g.pendingFollow = (biz.follows || []).filter(x => !x.fired).slice(0, MAX_FOLLOW_PER_DAY).map(x => ({ ...x, carried: true, fired: false }));
         biz.shelfLeft = B.shelf;
         // 끝까지 안 본 밀린 일은 직원이 알아서 (결과는 일지에)
         for (const x of B.backlog) { try { resolveEvent(g, x, staffPick(g, x), biz, 'auto'); } catch (err) { console.warn(err); } }
@@ -696,6 +905,7 @@ ${B.backlog.map(x => `<div class="cr-whoRow">${faceChip(x.staffIds[0], 28)}<span
     B.sheetHandler = e => {
         const b = e.target.closest('[data-b]'); if (!b || !B) return;
         if (b.dataset.b === 'resOk') { if (B.resultOpen) resultOk(); return; }
+        if (b.dataset.b === 'ord' || b.dataset.b === 'ordSkip') { if (B.acc?.open && !B.acc.done) chooseOrder(b.dataset.b === 'ord' ? +b.dataset.i : -1); return; }
         if (!B.sheetEv || B.resultOpen) return;
         if (b.dataset.b === 'opt') finishEvent(+b.dataset.i, false);
         else if (b.dataset.b === 'delegate') finishEvent(0, 'delegate');

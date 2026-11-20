@@ -19,17 +19,26 @@ const BASE = {
     tap1: [['네, 사장님?', 'Yes, boss?']],
     tap2: [['일하는 중이에요~', 'Working here~']],
     tap3: [['왜요?', 'What is it?']],
+    // 0.2.4 사장님에게 걸렸을 때 변명 / 지시를 받았을 때 반응
+    xSneak: [['맛만 보는 거예요! 품질 검사요!', 'Just a taste! Quality check!']],
+    xFree: [['단골이라서요… 조금만요!', 'They\'re a regular… just a little!']],
+    xChat: [['잠깐만요, 이야기가 재밌어서요!', 'One sec, the story was good!']],
+    xDoze: [['아, 안 잤어요! 눈만 감았어요!', 'I wasn\'t asleep! Just resting my eyes!']],
+    rObey: [['네, 알겠어요.', 'Okay, got it.']],
+    rDelay: [['네에… 이것만 하고요.', 'Yeah… right after this.']],
+    rRefuse: [['싫은데요.', 'I\'d rather not.']],
+    rTwist: [['아하, 그런 뜻이죠? 맡겨 주세요!', 'Ohh, I get it! Leave it to me!']],
 };
 const BY_TAG = {
-    lazy: { tap2: ['조금만 쉬면 안 돼요?', 'Can I rest a bit?'], tired: ['졸려요…', 'So sleepy…'] },
-    glutton: { sneak: ['이건 시식이에요, 시식!', 'It\'s a taste test!'], greet: ['오늘 뭐 구워요? 배고파요!', 'What are we baking? I\'m hungry!'] },
-    prickly: { tap1: ['…왜 불러요.', '…What.'], pricy: ['그 가격 제가 설명하는 거예요?', 'And I have to explain that price?'] },
+    lazy: { tap2: ['조금만 쉬면 안 돼요?', 'Can I rest a bit?'], tired: ['졸려요…', 'So sleepy…'], rDelay: ['조금만 있다가요…', 'In a little bit…'] },
+    glutton: { sneak: ['이건 시식이에요, 시식!', 'It\'s a taste test!'], greet: ['오늘 뭐 구워요? 배고파요!', 'What are we baking? I\'m hungry!'], xSneak: ['시식이에요, 시식!', 'It\'s a taste test!'] },
+    prickly: { tap1: ['…왜 불러요.', '…What.'], pricy: ['그 가격 제가 설명하는 거예요?', 'And I have to explain that price?'], rRefuse: ['그걸 왜 제가요.', 'Why should I?'] },
     quiet: { tap1: ['…', '…'], greet: ['…안녕하세요.', '…Morning.'] },
     chatty: { chat: ['아 그거 아세요? 어제요~', 'Oh, did you hear? Yesterday~'] },
-    flatterer: { tap1: ['역시 우리 사장님!', 'Our boss is the best!'] },
-    rebel: { tap2: ['제 방식대로 할게요.', 'I\'ll do it my way.'] },
-    timid: { busy: ['소, 손님이 너무 많아요…', 'T-too many customers…'] },
-    cheerful: { greet: ['오늘도 파이팅!', 'Let\'s go, today!'] },
+    flatterer: { tap1: ['역시 우리 사장님!', 'Our boss is the best!'], rObey: ['역시 사장님 말씀이 맞아요!', 'You\'re right as always, boss!'] },
+    rebel: { tap2: ['제 방식대로 할게요.', 'I\'ll do it my way.'], rRefuse: ['제 방식대로 할래요.', 'I\'ll do it my way.'] },
+    timid: { busy: ['소, 손님이 너무 많아요…', 'T-too many customers…'], rObey: ['죄, 죄송해요! 바로 할게요!', 'S-sorry! Right away!'] },
+    cheerful: { greet: ['오늘도 파이팅!', 'Let\'s go, today!'], rTwist: ['오케이! 제 식대로 해 볼게요!', 'Okay! I\'ll do it my way!'] },
 };
 
 export function line(staffId, key) {

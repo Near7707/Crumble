@@ -141,8 +141,11 @@ const keyMap = ids => Object.fromEntries(ids.map((id, i) => ['S' + (i + 1), id])
 
 // ---------- 1. 고용: 직원 설명서 (+ 그 직원 말투의 기본 말풍선) ----------
 // 기본 말풍선: AI가 실패하거나 아직 안 불렀을 때 장면에서 쓰는 대사. 고용 호출에서 같이 뽑는다.
-export const FALLBACK_KEYS = ['greet', 'pricy', 'cheap', 'buyMore', 'buyLess', 'busy', 'soldout', 'mistake', 'sneak', 'chat', 'clean', 'tired', 'thanks', 'freebie', 'rescue', 'tap1', 'tap2', 'tap3'];
-const FALLBACK_HINT = 'greet=arriving in the morning, pricy=boss set prices high, cheap=prices low, buyMore=boss bought lots of stock, buyLess=bought too little, busy=shop is crowded, soldout=display is empty, mistake=messed up a batch, sneak=caught sneaking a bite, chat=small talk with a customer, clean=while cleaning, tired=tired, thanks=to a customer after selling (their own way of saying thanks — or not), freebie=slipping a customer a free extra treat, rescue=jumping in to save a coworker\'s botched batch, tap1/tap2/tap3=random lines when the boss taps them';
+export const FALLBACK_KEYS = ['greet', 'pricy', 'cheap', 'buyMore', 'buyLess', 'busy', 'soldout', 'mistake', 'sneak', 'chat', 'clean', 'tired', 'thanks', 'freebie', 'rescue', 'tap1', 'tap2', 'tap3',
+    'xSneak', 'xFree', 'xChat', 'xDoze', 'rObey', 'rDelay', 'rRefuse', 'rTwist'];
+// 0.2.4: 사장님이 사고 현장을 잡았을 때 변명 + 지시를 받았을 때 반응 4가지
+const ORDER_HINT = 'xSneak=excuse when the boss catches them eating off the display, xFree=excuse when caught giving free treats, xChat=excuse when caught chatting away from the counter, xDoze=excuse when woken up from dozing, rObey=accepting the boss\'s order (their way of saying yes), rDelay=stalling ("in a sec…"), rRefuse=refusing or talking back to the boss, rTwist=cheerfully agreeing in a way that shows they will do it their own odd way';
+const FALLBACK_HINT = 'greet=arriving in the morning, pricy=boss set prices high, cheap=prices low, buyMore=boss bought lots of stock, buyLess=bought too little, busy=shop is crowded, soldout=display is empty, mistake=messed up a batch, sneak=caught sneaking a bite, chat=small talk with a customer, clean=while cleaning, tired=tired, thanks=to a customer after selling (their own way of saying thanks — or not), freebie=slipping a customer a free extra treat, rescue=jumping in to save a coworker\'s botched batch, tap1/tap2/tap3=random lines when the boss taps them, ' + ORDER_HINT;
 function cleanLines(o) {
     const out = {};
     if (o && typeof o === 'object') for (const k of FALLBACK_KEYS) { const v = str(Array.isArray(o[k]) ? o[k][0] : o[k], 100); if (v) out[k] = v; }
@@ -179,7 +182,7 @@ Return JSON:
    one string per key: ${FALLBACK_KEYS.map(k => `"${k}"`).join(', ')}
    (${FALLBACK_HINT}) }
 }`;
-    const j = await askJson(prompt, system(), 2, 2400);
+    const j = await askJson(prompt, system(), 2, 3000);
     if (!j) return null;
     const tags = (Array.isArray(j.tags) ? j.tags : []).map(t => String(t).trim()).filter(t => TAGS[t]).slice(0, 3);
     return {
@@ -208,7 +211,7 @@ ${manualText(id)}
 Return JSON: {"lines": { very short in-shop speech bubbles (max ~25 characters each) in THIS person's own voice,
    one string per key: ${FALLBACK_KEYS.map(k => `"${k}"`).join(', ')}
    (${FALLBACK_HINT}) }}`;
-    const j = await askJson(prompt, system());
+    const j = await askJson(prompt, system(), 2, 2000);
     const lines = cleanLines(j?.lines);
     if (!Object.keys(lines).length) return null;
     return { lines, linesLang: AI_LANG() };
@@ -255,7 +258,8 @@ export async function morningPrep(g, events, linesToo = true) {
    greet (arriving in the morning), pricy (boss set prices high), cheap (prices low), buyMore (boss bought lots of stock), buyLess (bought too little),
    busy (shop is crowded), soldout (display is empty), mistake (they messed up a batch / order), sneak (caught sneaking a bite, or teasing),
    chat (small talk with a customer), clean (while cleaning), tired, thanks (to a customer after a sale, their own way — a cold one may not really thank),
-   freebie (secretly giving a customer a free extra treat), rescue (jumping in to save a coworker's botched batch), tap1, tap2, tap3 (random lines when the boss taps them).
+   freebie (secretly giving a customer a free extra treat), rescue (jumping in to save a coworker's botched batch), tap1, tap2, tap3 (random lines when the boss taps them),
+   ${ORDER_HINT.replace(/=/g, ' = ')}.
 `;
     const prompt = `Shop day ${g.day}. Weather: ${WEATHER[g.weather]?.n[1]}. Reputation ${Math.round(g.rep)}/100. Menu: ${menu}.
 
@@ -276,7 +280,7 @@ ${linesToo ? linesPart : ''}${linesToo ? '2' : '1'}) "events": for EACH event E1
    - effects: optional small numeric changes {rep, money, ing, mood, fatigue, relBoss, clean} if personality changes the outcome; otherwise {}.
 
 Return JSON: {${linesToo ? '"lines":{"S1":{...}}, ' : ''}"events":[...]}`;
-    const j = await askJson(prompt, system(), 2, 2600);
+    const j = await askJson(prompt, system(), 2, linesToo ? 3400 : 2600);
     if (!j) return null;
     const lines = {};
     for (const [key, id] of Object.entries(km)) {

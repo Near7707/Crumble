@@ -644,7 +644,7 @@ export function closeDay(g, biz) {
     const ch = presentChunk(g);
     ch.stats = { guests: biz.served, sales: biz.revenue, leak };
     ch.items.push(...(biz.news || []).filter(n => !String(n.key).startsWith('ev')).slice(-14)
-        .map(n => ({ t: n.t, k: n.k, text: n.text, chip: n.chip || '', good: !!n.good, sid: n.sid || null })));
+        .map(n => ({ t: n.t, k: n.k, text: n.text, chip: n.chip || '', good: !!n.good, sid: n.sid || null, boss: !!n.boss, follow: !!n.follow, cc: n.cc || '' })));
     for (const l of biz.log) if (l.delta?.rep >= 5 || l.delta?.rep <= -5 || ['reviewer', 'group', 'fight', 'inspection'].includes(l.kind)) g.stats.memorable.push({ day: g.day, title: l.title, text: l.result || l.line || l.choice });
     if (g.stats.memorable.length > 30) g.stats.memorable.splice(0, g.stats.memorable.length - 30);
     makeInbox(g);
@@ -741,6 +741,7 @@ export function fireStaff(id, quit = false) {
 // ---------- 자동 운영 (사장님 없음) ----------
 export function autoDay(g) {
     g.day += 1;
+    g.pendingFollow = []; // 어제 못 터진 "이어지는 일"은 사장님 없는 날엔 그냥 지나감
     g.weather = rollWeather();
     g.effects = g.effects.filter(e => e.until >= g.day);
     const w = g.staff.filter(s => !s.restNext);

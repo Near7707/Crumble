@@ -352,7 +352,8 @@ function chunkStats(c) {
 }
 function logItem(it) {
     const face = it.boss ? '<span class="cr-face boss" aria-hidden="true">👑</span>' : it.sid && staffById(it.sid) ? faceChip(it.sid, 24) : '<span class="cr-face blank"></span>';
-    return `<div class="cr-lgRow${it.boss ? ' boss' : ''}"><time>${esc(it.t || '')}</time>${face}<span class="cr-lgText"><span class="cr-nd ${esc(it.k || 'work')}"></span>${esc(it.text)}</span>${it.chip ? `<span class="cr-chip ${it.boss ? 'boss' : it.good ? 'up' : 'dn'}">${esc(it.chip)}</span>` : ''}</div>`;
+    const cc = it.cc || (it.boss ? 'boss' : it.good ? 'up' : 'dn');
+    return `<div class="cr-lgRow${it.boss ? ' boss' : ''}${it.follow ? ' follow' : ''}">${it.follow ? '<span class="cr-lgArrow" aria-hidden="true">↳</span>' : ''}<time>${esc(it.t || '')}</time>${face}<span class="cr-lgText"><span class="cr-nd ${esc(it.k || 'work')}"></span>${esc(it.text)}</span>${it.chip ? `<span class="cr-chip ${esc(cc)}">${esc(it.chip)}</span>` : ''}</div>`;
 }
 function shopLogHtml(g) {
     view.logBase ??= g.logSeenAt || 0;
@@ -728,6 +729,8 @@ function lineKeyLabel(k) {
         chat: L('손님과 수다', 'Chatting'), clean: L('청소할 때', 'Cleaning'), tired: L('피곤할 때', 'Tired'),
         thanks: L('팔고 나서 인사', 'After a sale'), freebie: L('몰래 덤 줄 때', 'Slipping a freebie'), rescue: L('동료 실수 막을 때', 'Saving a coworker'),
         tap1: L('눌렀을 때 1', 'Tapped 1'), tap2: L('눌렀을 때 2', 'Tapped 2'), tap3: L('눌렀을 때 3', 'Tapped 3'),
+        xSneak: L('몰래 먹다 사장님께 걸림', 'Caught snacking by you'), xFree: L('덤 주다 걸림', 'Caught giving freebies'), xChat: L('수다 떨다 걸림', 'Caught chatting'), xDoze: L('졸다 걸림', 'Caught dozing'),
+        rObey: L('지시 · 따를 때', 'Order · going along'), rDelay: L('지시 · 미룰 때', 'Order · stalling'), rRefuse: L('지시 · 안 들을 때', 'Order · refusing'), rTwist: L('지시 · 엉뚱하게 알아들을 때', 'Order · own way'),
     }[k] || k;
 }
 
@@ -787,7 +790,7 @@ ${b.lines && Object.keys(b.lines).length ? `<label class="cr-field">${L('기본 
 
 async function remakeLinesFlow() {
     const g = G(); const s = g.staff[view.staffIdx]; const b = book(s.id);
-    if (!await confirmBox(L('설명서와 말투 샘플로 기본 말풍선 15줄을 새로 만들까요? AI를 한 번 불러요. 직접 고친 말풍선은 바뀌어요.', 'Rewrite the 15 fallback bubbles from the manual and voice samples? This calls the AI once. Your hand-edited bubbles will be replaced.'), L('다시 만들기', 'Remake'))) return;
+    if (!await confirmBox(L('설명서와 말투 샘플로 기본 말풍선 26줄을 새로 만들까요? AI를 한 번 불러요. 직접 고친 말풍선은 바뀌어요.', 'Rewrite the 26 fallback bubbles from the manual and voice samples? This calls the AI once. Your hand-edited bubbles will be replaced.'), L('다시 만들기', 'Remake'))) return;
     openModal(`<div class="cr-loading big">${L('말투를 맞추는 중…', 'Matching their voice…')}</div>`);
     const r = await remakeLines(s.id);
     if (!r) { closeModal(); toast(L('AI 응답을 받지 못했어요', 'No AI response')); return; }

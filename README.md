@@ -11,6 +11,7 @@
 - **가게 안을 구경해요.** 비스듬히 내려다보는 작은 가게에서 직원들이 오븐에서 굽고, 계산대에서 주문을 받고, 바닥을 닦고, 가끔 몰래 케이크를 먹어요. 끌어서 둘러보고 두 손가락으로 확대할 수 있어요.
 - **하루 5~10분.** 🌅 아침 준비(재료·가격) → ☕ 영업(사건이 "!"로 떠요) → 🌙 마감 정산(번 돈, 직원 일기). 영업 중엔 직원 머리 위 이름표, 손님 기다림 막대, 떠오르는 숫자, "지금 가게 소식"으로 무슨 일이 있는지 보여요. 하루를 마치면 결과를 보고 원할 때 바로 다음 날을 시작해요.
 - **사건은 직접 고르거나 맡기거나.** "!"를 누르면 선택지가 나와요. 직원에게 맡기면 성격대로 처리하고, [나중에 보기]로 미뤄 둘 수도 있어요. 처리하고 나면 **결과 창**에 누가 무엇을 해서 어떻게 됐는지가 떠요. 영업 중에도 직원·결재함·일지 탭을 볼 수 있어요 (보는 동안 가게는 멈춰요).
+- **사고 현장에 끼어들기.** 직원이 몰래 먹거나, 덤을 막 주거나, 수다 떠느라 계산대를 비우거나, 졸고 있으면 머리 위에 빨간 "!"가 떠요. 누르면 가게가 멈추고 한마디 할 수 있어요 (지시 4가지). 직원은 성격·기분·사장님과 사이에 따라 **따르거나, 미루거나, 안 듣거나, 엉뚱하게 알아들어요.** 그 모습이 장면에서 그대로 보이고, 가끔은 시간이 지나 "아까 그 일" 때문에 다른 일이 이어져요 (가게 로그에 지시 바로 아래 ↳로 남아요).
 - **말투 샘플.** 직원 설명서에 RP 속 실제 대사를 넣으면 그 말투를 따라 해요. 다른 언어로 적어도 느낌만 살려 옮겨요.
 - **사장님이 없을 때도 가게는 돌아가요.** 창을 닫아 두면 8시간(설정)마다 직원들끼리 하루를 영업하고, 다시 켜면 그동안 있었던 일이 **가게 로그**에 정리돼 있어요 (최대 3일치). 가게 로그에는 사장님이 있을 때·없을 때 일이 시간 덩어리로 쌓이고, 손님·매출·새는 돈도 같이 보여요. 그보다 짧게 창을 30분 넘게 닫아 두면 작은 일이 쌓이고, 영업 중에 1시간 넘게 비우면 밀린 일이 기다리고 있어요. 자리 비운 사이에 망하지는 않아요.
 - **능력과 성격은 따로.** 제빵·접객 능력은 자라지만 성격은 카드 그대로예요. 유능한 직원도 사고를 칠 수 있어요.
@@ -47,7 +48,7 @@ https://github.com/Near7707/Crumble
 - 직접 영업 하루에 2번 (아침에 대사·사건 글 / 마감에 일기)
 - 다시 켰을 때 자동 운영 일지 1번 (같은 날 잠깐 비운 일지는 하루 3번까지), 폐업 때 1번
 - 영업 중 밀린 일이 생기면 사건 글 1번
-- 가게 장면 속 움직임·아이콘은 전부 규칙으로 정해서 AI를 부르지 않아요.
+- 가게 장면 속 움직임·아이콘, 지시에 대한 반응도 전부 규칙으로 정해서 AI를 부르지 않아요. 반응 말풍선은 아침 호출 때 직원 말투로 미리 받아 둬요.
 - AI가 응답하지 않으면 기본 대사로 계속 진행돼요. 기본 말풍선은 고용할 때 그 직원 말투로 같이 만들어 둬요 (설명서 [고치기]에서 바꿀 수 있어요).
 
 기본은 지금 연결된 API를 그대로 쓰고, 설정의 **AI 연결**에서 게임용 연결 프로필을 따로 고를 수 있어요 (싸고 빠른 모델은 게임에, 채팅은 원래 모델로).
@@ -82,6 +83,7 @@ A shop-management extension for SillyTavern: characters from your character card
 - **Watch the shop.** A small isometric shop where your staff bake at the oven, take orders at the counter, mop the floor, and sometimes sneak a slice of cake. Drag to look around, pinch to zoom.
 - **5–10 minutes a day.** 🌅 Morning prep (stock & prices) → ☕ Business (events pop up as "!") → 🌙 Closing (earnings, staff diaries). During business, status tags over staff, guest wait bars, floating numbers and a "Shop news" card show what's going on. After closing you see the day's results and start the next day whenever you like.
 - **Decide, delegate, or later.** Tap a "!" to choose, leave it to the staff (they handle it their own way), or put it off. Afterwards a **result card** shows who did what and how it turned out. You can check the Staff, Inbox and Log tabs during business (the shop waits while you look).
+- **Step in when things go wrong.** When someone sneaks dessert, hands out freebies, leaves the counter to chat, or dozes off, a red "!" appears over them. Tap it and the shop pauses so you can say something (4 orders). Depending on their personality, mood and how they feel about you, they'll **go along, stall, ignore you, or take it their own way** — and you see it play out in the shop. Sometimes something follows later because of what happened earlier (it shows up in the shop log right under your order, marked ↳).
 - **Voice samples.** Paste real roleplay lines into a staff manual and they'll talk like that — in any language, the feel carries over.
 - **The shop runs while you're away.** With the window closed, the staff run a day on their own every 8 hours (adjustable), and a **shop log** of what happened is waiting when you come back (up to 3 days). The shop log groups what happened with you and without you into blocks of time, with guests, sales and leaked money. For shorter breaks, closing the window for 30+ minutes lets small things happen, and stepping away for an hour during business leaves a backlog waiting for you. The shop can't go bankrupt while you're gone.
 - **Skills ≠ personality.** Baking and service grow; personality stays true to the card. Even a pro can cause trouble.
@@ -118,7 +120,7 @@ Under **Crumble** in the extension settings, or with the **⚙ button** at the t
 - 2 per business day (morning lines & event text / closing diaries)
 - 1 for the away log when you return (same-day short breaks: up to 3 a day), 1 for the closing-down ending
 - 1 for event text when a business backlog piles up
-- Movement and icons in the shop scene are rule-based — no AI calls.
+- Movement and icons in the shop scene, and how staff react to your orders, are rule-based — no AI calls. Their reaction lines are written in their voice during the morning call.
 - If the AI doesn't answer, the game continues with default lines. Each staff member's fallback bubbles are written in their own voice when hired (editable under Edit manual).
 
 By default it uses whatever API you're currently connected to. Pick a separate connection profile under **AI connection** to run the game on a cheaper/faster model while chatting with your usual one.
