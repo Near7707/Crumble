@@ -37,6 +37,25 @@ export function mount() {
 }
 export const inner = () => root.querySelector('.cr-inner');
 
+// 창을 "지금 눈에 보이는 화면"에 딱 맞춘다.
+// 아이폰 사파리는 페이지 전체 크기와 보이는 화면이 어긋날 수 있어서, fixed + inset:0 만으로는 창이 위로 밀려 잘린다.
+function fitToScreen() {
+    if (!root || !root.classList.contains('open')) return;
+    const vv = window.visualViewport;
+    const w = vv ? vv.width : window.innerWidth, h = vv ? vv.height : window.innerHeight;
+    const x = vv ? vv.offsetLeft : 0, y = vv ? vv.offsetTop : 0;
+    Object.assign(root.style, { inset: 'auto', left: x + 'px', top: y + 'px', width: w + 'px', height: h + 'px' });
+    // 부모 요소 때문에 기준점이 다르면 실제 위치를 재서 한 번 더 맞춘다
+    const r = root.getBoundingClientRect();
+    const dx = x - r.left, dy = y - r.top;
+    if (Math.abs(dx) > 1 || Math.abs(dy) > 1) { root.style.left = (x + dx) + 'px'; root.style.top = (y + dy) + 'px'; }
+}
+let fitT = null;
+const fitSoon = () => { clearTimeout(fitT); fitT = setTimeout(fitToScreen, 60); };
+window.visualViewport?.addEventListener('resize', fitSoon);
+window.visualViewport?.addEventListener('scroll', fitSoon);
+window.addEventListener('orientationchange', fitSoon);
+
 // 창 크기: 자동이면 폰은 작게(꽉 차게), 컴퓨터는 크게
 export function winSizeNow() {
     const v = S().winSize || 'auto';
@@ -53,6 +72,7 @@ export function applyWinSize() {
 }
 let resizeT = null;
 window.addEventListener('resize', () => {
+    fitSoon();
     if (!view.open || (S().winSize || 'auto') !== 'auto') return;
     clearTimeout(resizeT);
     resizeT = setTimeout(() => { const win = root?.querySelector('.cr-win'); const before = win?.className; applyWinSize(); if (win && win.className !== before && !businessActive()) render(); }, 300);
@@ -62,6 +82,7 @@ export async function openWindow() {
     mount();
     ensureGame();
     root.classList.add('open');
+    fitToScreen();
     applyWinSize();
     view.open = true;
     if (businessActive()) return; // 멈춰 둔 영업 화면 그대로

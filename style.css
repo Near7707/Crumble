@@ -26,7 +26,7 @@
 #crumble-root b { font-weight: 800; }
 
 .cr-win {
-    position: relative; width: min(400px, 100vw); height: min(780px, 100dvh);
+    position: relative; width: min(400px, 100%); height: min(780px, 100%);
     border: 3px solid var(--cr-brown); border-radius: 22px; overflow: hidden; overflow: clip;
     background-color: var(--cr-cream);
     background-image: radial-gradient(#F7CBD6 1.6px, transparent 1.8px), radial-gradient(#F6DC8E 1.6px, transparent 1.8px);
@@ -34,7 +34,7 @@
     box-shadow: 0 10px 40px rgba(60, 38, 22, .35);
 }
 @media (max-width: 420px), (max-height: 640px) {
-    .cr-win { width: 100vw; height: 100dvh; border-radius: 0; border-width: 0; }
+    .cr-win { width: 100%; height: 100%; border-radius: 0; border-width: 0; }
 }
 .cr-inner { height: 100%; display: flex; flex-direction: column; overflow: hidden; overflow: clip; }
 .cr-main { flex: 1; overflow-y: auto; overscroll-behavior: contain; padding: 4px 14px 22px; display: flex; flex-direction: column; gap: 10px; -webkit-overflow-scrolling: touch; }
@@ -325,10 +325,10 @@ button.cr-ent { cursor: pointer; }
 .crumble-settings small { display: block; opacity: .75; }
 
 /* 0.1.2 — 창 크기 (설정 "창 크기", 자동이면 컴퓨터에서 크게) */
-.cr-win.sz-m { width: min(500px, 100vw); height: min(860px, 100dvh); }
-.cr-win.sz-l { width: min(600px, 100vw); height: min(920px, 100dvh); }
+.cr-win.sz-m { width: min(500px, 100%); height: min(860px, 100%); }
+.cr-win.sz-l { width: min(600px, 100%); height: min(920px, 100%); }
 @media (max-width: 420px), (max-height: 640px) {
-    #crumble-root .cr-win { width: 100vw; height: 100dvh; border-radius: 0; border-width: 0; }
+    #crumble-root .cr-win { width: 100%; height: 100%; border-radius: 0; border-width: 0; padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px); }
 }
 
 /* 사장 친밀도: 사이 나쁘면 파란 금 간 하트 */
