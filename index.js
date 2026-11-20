@@ -91,11 +91,18 @@ function addMenuButton() {
     menu.appendChild(item);
 }
 
-async function init() {
-    S(); // 기본 설정 채우기
+// 설정 칸 자리는 파일을 불러오자마자 왼쪽 칸에 잡아 둠 (manifest.json의 loading_order 순서대로 놓이게)
+function mountSettingsHost() {
+    if (document.querySelector('#crumble_settings_host')) return;
     const host = document.createElement('div');
     host.id = 'crumble_settings_host';
-    (document.querySelector('#extensions_settings2') || document.querySelector('#extensions_settings'))?.appendChild(host);
+    (document.querySelector('#extensions_settings') || document.querySelector('#extensions_settings2'))?.appendChild(host);
+}
+mountSettingsHost();
+
+async function init() {
+    S(); // 기본 설정 채우기
+    mountSettingsHost();
     redrawSettings();
     addMenuButton();
     // 연결 프로필이 늦게 불러와지거나 바뀌면 목록 다시 채우기
