@@ -102,6 +102,7 @@ export function newGame(carryRelations = null) {
         wageRate: 1,
         effects: [], // 며칠 이어지는 효과 {kind, until}
         pending: [], // 나중에 터질 일 {a,b,day,text}
+        recentEv: [], // 최근 나온 사건 {kind,day} — 같은 사건이 계속 나오지 않게
         notices: [], // 다음 날 아침 알림 (밤도둑 등)
         stats: { bestDay: null, maxRep: 40, directDays: 0, autoDays: 0, memorable: [] },
         today: null,

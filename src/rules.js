@@ -327,6 +327,9 @@ function pairOf(g, kind) {
     return pairs.length ? pick(pairs) : null;
 }
 
+/** 평판 낮음에서도 가끔 나오는 손님 사건 */
+const LOW_GUEST = ['rude', 'regular', 'shoplifter'];
+
 /** 오늘 나올 사건 고르기 (수치 조건 + 성격 태그) */
 export function pickEvents(g, mode = 'direct', count = null) {
     const tier = repTier(g.rep);
@@ -334,10 +337,13 @@ export function pickEvents(g, mode = 'direct', count = null) {
     if (!w.length) return [];
     const n = count ?? (mode === 'direct' ? (g.today?.crowd ? 4 : randi(3, 4)) : randi(1, 2));
     const pool = [];
+    const recent = new Set((g.recentEv || []).filter(r => r.day >= g.day - 2).map(r => r.kind));
     for (const [id, k] of Object.entries(EVENT_KINDS)) {
         if (mode === 'auto' && !k.auto) continue;
         if (mode === 'direct' && k.big === undefined && false) continue;
-        if (!k.tiers.includes(tier) && !(k.cat === 'staff')) continue;
+        // 평판 낮을 때도 손님 사건이 조금은 섞이게 (확률 반)
+        const lowGuest = tier === 'low' && LOW_GUEST.includes(id);
+        if (!k.tiers.includes(tier) && !(k.cat === 'staff') && !lowGuest) continue;
         if (k.needLowClean && g.clean >= 30) continue;
         if (id === 'franchise' && g.effects.some(e => e.kind === 'franchise')) continue;
         let staffIds = null;
@@ -349,6 +355,9 @@ export function pickEvents(g, mode = 'direct', count = null) {
         if (id === 'festival' || id === 'franchise') weight = .35;
         if (id === 'priceSpike' || id === 'spoil') weight = .5;
         if (k.big) weight *= .8;
+        if (lowGuest && !k.tiers.includes(tier)) weight *= .5;
+        // 최근 이틀 안에 나온 사건은 덜 나오게 (막지는 않음)
+        if (recent.has(id)) weight *= .2;
         // 감싸줌 → 나중에 터짐
         if (k.pair === 'bad' && g.pending.some(p => staffIds.includes(p.a))) weight *= 2;
         pool.push({ kind: id, staffIds, weight });
@@ -368,7 +377,16 @@ export function pickEvents(g, mode = 'direct', count = null) {
     const slots = shuffle([.14, .32, .5, .66, .82]).slice(0, out.length).sort();
     out.forEach((e, i) => (e.at = EVENT_KINDS[e.kind].early ? .06 : slots[i]));
     out.sort((a, b) => a.at - b.at);
+    // 그날 고른 사건 기억 (밀린 일처럼 여러 개 뽑아 일부만 쓰는 경우는 빼고)
+    if (mode === 'auto' || count == null) noteRecentEvents(g, out);
     return out;
+}
+
+/** 최근 나온 사건 기록 (이틀 지난 건 지움) */
+function noteRecentEvents(g, evs) {
+    const keep = (g.recentEv || []).filter(r => r.day >= g.day - 2);
+    for (const e of evs) keep.push({ kind: e.kind, day: g.day });
+    g.recentEv = keep.slice(-30);
 }
 
 /** AI가 못 쓸 때 쓰는 기본 사건 글 */
