@@ -61,6 +61,16 @@ function fitToScreen() {
     const bx = onScreen(r.left, x) ? 0 : r.left, by = onScreen(r.top, y) ? 0 : r.top;
     root.style.left = (x - bx) + 'px'; root.style.top = (y - by) + 'px';
 }
+// 입력 중인 창을 닫기 직전에 먼저 입력을 끝낸다.
+// 그냥 숨기면 아이폰은 "입력 끝" 신호를 늦게 보내서, 키보드가 내려가는 동안 창이 못 따라가고 흔들린다.
+function endTyping() {
+    const a = document.activeElement;
+    const typing = isTextInput(a);
+    if (!typing && !root?.classList.contains('cr-kb')) return;
+    if (typing) a.blur();
+    root.classList.remove('cr-kb');
+    fitSoon();
+}
 let fitT = [], fitRaf = 0, fitUntil = 0;
 // 키보드가 올라오는 동안 아이폰이 페이지를 여러 번 밀어서, 약 1초 동안은 화면이 바뀔 때마다(매 프레임) 따라 맞춘다.
 // 바로 한 번 맞추고, 끝난 뒤에도 혹시 몰라 몇 번 더.
@@ -152,6 +162,7 @@ export async function openWindow() {
 }
 export function closeWindow() {
     if (!root) return;
+    endTyping();
     root.classList.remove('open');
     view.open = false;
     markSeen(true);
@@ -546,6 +557,7 @@ export function openSheet(html, lock = false) {
 }
 export function closeSheet() {
     if (!root) return;
+    endTyping();
     root.querySelector('.cr-sheet').classList.remove('open', 'lock');
     if (!root.querySelector('.cr-modal').classList.contains('open')) root.querySelector('.cr-dim').classList.remove('on');
 }
@@ -556,6 +568,7 @@ export function openModal(html, kind = '') {
 }
 export function closeModal() {
     if (!root) return;
+    endTyping();
     const m = root.querySelector('.cr-modal');
     const kind = m.classList.contains('open') ? m.dataset.kind : '';
     m.classList.remove('open'); m.dataset.kind = '';
