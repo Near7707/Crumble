@@ -216,12 +216,15 @@ function statusText(g) {
     if (g.phase === 'done') return L('오늘 영업 끝', 'Closed for today');
     return '';
 }
-function headHtml() {
+/** 머리 부분 (모든 화면 같은 모양). 영업 중엔 biz로 돈·버튼·상태 이름표·시간 막대만 바꿔 끼움 */
+export function headHtml(biz = null) {
     const g = G();
     const nm = shopName(g);
-    return `<header class="cr-top"><div class="cr-row">${logoHtml()}<span class="cr-money${g.money < 0 ? ' neg' : ''}">💰 ${money(g.money)}</span>${gearBtn()}${closeBtn()}</div>
+    const moneyH = biz?.money ?? `<span class="cr-money${g.money < 0 ? ' neg' : ''}">💰 ${money(g.money)}</span>`;
+    const st = biz?.status ?? `<span class="cr-pill st ${g.phase === 'ready' && !g.away?.loading ? 'staff' : ''}"><i></i>${statusText(g)}</span>`;
+    return `<header class="cr-top"><div class="cr-row">${logoHtml()}${moneyH}${biz?.btns ?? gearBtn()}${closeBtn()}</div>
 <div class="cr-row cr-shopName"><b class="${nm ? '' : 'none'}">${esc(nm || L('이름 없는 가게', 'Unnamed shop'))}</b><button class="cr-nameBtn" type="button" data-act="renameShop">${nm ? L('이름 바꾸기', 'Rename') : L('이름 짓기', 'Name it')}</button></div>
-<div class="cr-row cr-status"><span class="cr-pill day">${F(L('{n}일째', 'Day {n}'), { n: g.day })}</span><span class="cr-pill wx">${weatherLabel(g.weather)}</span><span class="cr-pill st ${g.phase === 'ready' && !g.away?.loading ? 'staff' : ''}"><i></i>${statusText(g)}</span>${g.money < 0 ? `<span class="cr-pill debt">${F(L('빚 {n}/3일', 'Debt {n}/3'), { n: g.debtDays })}</span>` : ''}</div></header><div class="cr-drip"></div>`;
+<div class="cr-row cr-status"><span class="cr-pill day">${F(L('{n}일째', 'Day {n}'), { n: g.day })}</span><span class="cr-pill wx">${weatherLabel(g.weather)}</span>${st}${g.money < 0 ? `<span class="cr-pill debt">${F(L('빚 {n}/3일', 'Debt {n}/3'), { n: g.debtDays })}</span>` : ''}${biz?.tail ?? ''}</div></header><div class="cr-drip"></div>`;
 }
 function tabsHtml() {
     const g = G();

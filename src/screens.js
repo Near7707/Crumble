@@ -13,7 +13,7 @@ import { createScene } from './scene.js';
 import { faceChip } from './looks.js';
 import { line, tapLine } from './lines.js';
 import { morningPrep, closingDiary } from './ai.js';
-import { render, addScene, openSheet, closeSheet, toast, logoHtml, closeBtn, gearBtn, bizTabs, heartRow, bar, nameTag, closeWindow, inner } from './ui.js';
+import { render, addScene, openSheet, closeSheet, toast, logoHtml, headHtml, closeBtn, gearBtn, bizTabs, heartRow, bar, nameTag, closeWindow, inner } from './ui.js';
 
 let B = null; // 지금 돌아가는 영업
 const inflight = new Set(); // 지금 기다리는 AI 호출 (저장하지 않음 → 새로고침하면 다시 부름)
@@ -33,10 +33,14 @@ export function resumeIfNeeded() { /* 영업 화면은 render()에서 이어서 
 const PAUSE = '<svg width="16" height="16" viewBox="0 0 20 20" aria-hidden="true"><rect x="5" y="4" width="3.5" height="12" rx="1.5" fill="#8A5A36"/><rect x="11.5" y="4" width="3.5" height="12" rx="1.5" fill="#8A5A36"/></svg>';
 const PLAY = '<svg width="16" height="16" viewBox="0 0 20 20" aria-hidden="true"><path d="M6 3.5v13l11-6.5z" fill="#8A5A36"/></svg>';
 
-function steps(now) {
-    const st = [['morning', '아침', 'Morning'], ['open', '영업', 'Open'], ['close', '마감', 'Close']];
-    const idx = st.findIndex(s => s[0] === now);
-    return st.map(([id, ko, en], i) => `<span class="cr-step${i < idx ? ' done' : i === idx ? ' now' : ''}">${i < idx ? '✓ ' : ''}${L(ko, en)}</span>`).join('<span class="cr-arrow">›</span>');
+/** 영업 화면 머리: 평소 머리 그대로. 상태 이름표에 단계·시간, 그 옆에 시간 막대(+ 영업 중이면 ⏸) */
+function bizHead(now, { moneyHtml, clock, fill = 0, fillId = '', pause = '' }) {
+    const name = { morning: L('아침 준비 중', 'Getting ready'), open: L('영업 중', 'Open'), close: L('마감 정산', 'Closing up') }[now];
+    return headHtml({
+        money: moneyHtml,
+        status: `<span class="cr-pill st"><i></i>${name} · ${clock}</span>`,
+        tail: `<span class="cr-bar time cr-headTime"><i${fillId ? ` id="${fillId}"` : ''} style="width:${fill}%"></i></span>${pause}`,
+    });
 }
 
 export function renderBusiness(box) {
@@ -55,8 +59,7 @@ function morningScreen(box) {
     save();
     if (!t.aiDone && !t.aiError && !inflight.has('m' + g.id + g.day)) startMorningAI(g);
 
-    box.innerHTML = `<header class="cr-top biz"><div class="cr-row">${steps('morning')}<span class="cr-money sm" id="cr-mMoney"></span>${gearBtn()}${closeBtn()}</div>
-<div class="cr-time"><b>${L('오전 9:40', '9:40 AM')}</b>${bar(4, '#FBE29A')}<span class="cr-muted">${L('10시 문 열기', 'Opens at 10')}</span></div></header><div class="cr-drip"></div>${bizTabs()}
+    box.innerHTML = `${bizHead('morning', { moneyHtml: '<span class="cr-money" id="cr-mMoney"></span>', clock: L('오전 9:40', '9:40 AM'), fill: 4 })}${bizTabs()}
 <main class="cr-main" data-biz>
 ${(t.notices || []).map(n => `<div class="cr-alertCard">🌙 ${esc(n.text)}</div>`).join('')}
 <div class="cr-sceneHost" id="cr-mScene"></div>
@@ -208,8 +211,7 @@ function openScreen(box) {
     const biz = t.biz = newBiz(g);
     const minutes = clamp(S().businessMinutes || 4, 2, 10);
     const D = minutes * 60000;
-    box.innerHTML = `<header class="cr-top biz"><div class="cr-row">${steps('open')}${gearBtn(true)}<button class="cr-pause" type="button" aria-label="${L('일시정지', 'Pause')}">${PAUSE}</button>${closeBtn()}</div>
-<div class="cr-time"><b id="cr-clock"></b><span class="cr-bar time"><i id="cr-tfill"></i></span><span class="cr-muted">${L('저녁 8시 마감', 'Closes 8 PM')}</span></div></header><div class="cr-drip"></div>${bizTabs()}
+    box.innerHTML = `${bizHead('open', { moneyHtml: `<span class="cr-money" id="cr-oMoney">💰 ${money(g.money)}</span>`, pause: `<button class="cr-pause sm" type="button" aria-label="${L('일시정지', 'Pause')}">${PAUSE}</button>`, clock: '<span id="cr-clock"></span>', fillId: 'cr-tfill' })}${bizTabs()}
 <main class="cr-main" data-biz>
 <div class="cr-pauseBand" role="status"><span>⏸ ${L('가게가 멈춰 있어요', 'The shop is paused')}</span><button type="button" class="cr-pbtn sm" data-b="resume">▶ ${L('다시 시작', 'Resume')}</button></div>
 <div class="cr-sceneHost" id="cr-oScene"></div>
@@ -238,6 +240,8 @@ function openScreen(box) {
 
     // ---------- 화면 갱신 ----------
     const chips = () => {
+        const mo = box.querySelector('#cr-oMoney');
+        if (mo) { mo.textContent = '💰 ' + money(g.money); mo.classList.toggle('neg', g.money < 0); }
         box.querySelector('#cr-chips').innerHTML =
             `<span class="cr-chip">${L('손님', 'Guests')} <b>${biz.served}</b></span><span class="cr-chip">${L('매출', 'Sales')} <b>${money(biz.revenue)}</b></span><span class="cr-chip">${L('평판', 'Rep')} <b>${Math.round(g.rep)}</b></span>` +
             `<span class="cr-chip${g.ing + B.shelf < 4 ? ' warn' : ''}">${L('재료', 'Stock')} <b>${g.ing}</b>+${B.shelf}</span><span class="cr-chip${g.clean < 35 ? ' warn' : ''}">${L('청결', 'Clean')} <b>${Math.round(g.clean)}</b></span>` +
@@ -929,8 +933,7 @@ function closeScreen(box) {
     const expOf = id => (biz.expLog || []).filter(x => x.id === id).reduce((a, x) => { a[x.skill] = (a[x.skill] || 0) + x.n; return a; }, {});
     const repD = Math.round(g.rep - biz.rep0), cleanD = Math.round(g.clean - biz.clean0);
     const net = g.money - biz.money0 - (t.spentIng || 0);
-    box.innerHTML = `<header class="cr-top biz"><div class="cr-row">${steps('close')}<span class="cr-money sm${g.money < 0 ? ' neg' : ''}">💰 ${money(g.money)}</span>${gearBtn()}${closeBtn()}</div>
-<div class="cr-time"><b>${L('저녁 8:00', '8:00 PM')}</b>${bar(100, '#FBE29A')}<span class="cr-muted">${L('문 닫음', 'Closed')}</span></div></header><div class="cr-drip"></div>${bizTabs()}
+    box.innerHTML = `${bizHead('close', { moneyHtml: `<span class="cr-money${g.money < 0 ? ' neg' : ''}">💰 ${money(g.money)}</span>`, clock: L('저녁 8:00', '8:00 PM'), fill: 100 })}${bizTabs()}
 <main class="cr-main" data-biz>
 <div class="cr-sceneHost" id="cr-cScene"></div>
 <section class="cr-card"><div class="cr-ttl">💰 ${L('오늘 번 돈', 'Today\'s earnings')}<small>${F(L('{n}일째', 'Day {n}'), { n: g.day })}</small></div>

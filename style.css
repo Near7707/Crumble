@@ -507,3 +507,7 @@ button.cr-ent { cursor: pointer; }
 .cr-nrow.follow::before { content: '↳'; position: absolute; left: 2px; color: #B79373; font-size: 12px; }
 .cr-lgArrow { position: absolute; left: 1px; color: #B79373; font-size: 12px; }
 .cr-ttl.sm { font-size: 13.5px; margin-bottom: 6px; }
+
+/* 영업 중 머리: 평소 머리 맨 아래 얇은 시간 막대 */
+.cr-headTime { flex: 1; min-width: 24px; width: auto; height: 6px; }
+.cr-pause.sm { margin-left: 0; width: 30px; height: 30px; flex: none; }
