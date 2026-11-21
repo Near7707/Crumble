@@ -61,9 +61,18 @@ function fitToScreen() {
     const bx = onScreen(r.left, x) ? 0 : r.left, by = onScreen(r.top, y) ? 0 : r.top;
     root.style.left = (x - bx) + 'px'; root.style.top = (y - by) + 'px';
 }
-let fitT = [];
-// 키보드가 올라오는 동안 아이폰이 페이지를 여러 번 밀어서, 조금 뒤에도 몇 번 더 맞춘다
-const fitSoon = () => { fitT.forEach(clearTimeout); fitT = [60, 300, 700].map(ms => setTimeout(fitToScreen, ms)); };
+let fitT = [], fitRaf = 0, fitUntil = 0;
+// 키보드가 올라오는 동안 아이폰이 페이지를 여러 번 밀어서, 약 1초 동안은 화면이 바뀔 때마다(매 프레임) 따라 맞춘다.
+// 바로 한 번 맞추고, 끝난 뒤에도 혹시 몰라 몇 번 더.
+function fitFollow() {
+    fitToScreen();
+    fitRaf = performance.now() < fitUntil ? requestAnimationFrame(fitFollow) : 0;
+}
+const fitSoon = () => {
+    fitUntil = performance.now() + 1000;
+    if (!fitRaf) fitFollow();
+    fitT.forEach(clearTimeout); fitT = [1100, 1500].map(ms => setTimeout(fitToScreen, ms));
+};
 window.visualViewport?.addEventListener('resize', fitSoon);
 window.visualViewport?.addEventListener('scroll', fitSoon);
 window.addEventListener('orientationchange', fitSoon);
@@ -223,7 +232,7 @@ export function headHtml(biz = null) {
     const moneyH = biz?.money ?? `<span class="cr-money${g.money < 0 ? ' neg' : ''}">💰 ${money(g.money)}</span>`;
     const st = biz?.status ?? `<span class="cr-pill st ${g.phase === 'ready' && !g.away?.loading ? 'staff' : ''}"><i></i>${statusText(g)}</span>`;
     return `<header class="cr-top"><div class="cr-row">${logoHtml()}${moneyH}${biz?.btns ?? gearBtn()}${closeBtn()}</div>
-<div class="cr-row cr-shopName"><b class="${nm ? '' : 'none'}">${esc(nm || L('이름 없는 가게', 'Unnamed shop'))}</b><button class="cr-nameBtn" type="button" data-act="renameShop">${nm ? L('이름 바꾸기', 'Rename') : L('이름 짓기', 'Name it')}</button></div>
+<div class="cr-row cr-shopName">${shopNameRowHtml(nm)}</div>
 <div class="cr-row cr-status"><span class="cr-pill day">${F(L('{n}일째', 'Day {n}'), { n: g.day })}</span><span class="cr-pill wx">${weatherLabel(g.weather)}</span>${st}${g.money < 0 ? `<span class="cr-pill debt">${F(L('빚 {n}/3일', 'Debt {n}/3'), { n: g.debtDays })}</span>` : ''}${biz?.tail ?? ''}</div></header><div class="cr-drip"></div>`;
 }
 function tabsHtml() {
@@ -587,10 +596,22 @@ onSettings((key, scope) => {
     if (key === 'winSize') applyWinSize();
     // 확장 설정 칸에서 바꿨거나 언어가 바뀌면 창 안 설정도 다시 그림
     if (scope !== 'game' || key === 'lang') redrawSettingsModal();
-    if (!['lang', 'bossName', 'winSize', 'shopName'].includes(key)) return;
+    if (key === 'shopName') { refreshShopName(); return; }
+    if (!['lang', 'bossName', 'winSize'].includes(key)) return;
     if (businessActive()) { if (key !== 'winSize') toast(L('영업이 끝나면 화면에 반영돼요', 'Shows up after today\'s business')); return; }
     softRender();
 });
+
+/** 가게 이름이 바뀌면 영업 중이어도 그 자리에서 바로: 머리의 이름 줄 + 장면 간판만 갈아 끼움 */
+function shopNameRowHtml(nm) {
+    return `<b class="${nm ? '' : 'none'}">${esc(nm || L('이름 없는 가게', 'Unnamed shop'))}</b><button class="cr-nameBtn" type="button" data-act="renameShop">${nm ? L('이름 바꾸기', 'Rename') : L('이름 짓기', 'Name it')}</button>`;
+}
+function refreshShopName() {
+    const g = G(); if (!g || !root) return;
+    const nm = shopName(g);
+    root.querySelectorAll('.cr-shopName').forEach(el => { el.innerHTML = shopNameRowHtml(nm); });
+    scenes.forEach(sc => { try { sc.shopSign?.(nm); } catch { /* */ } });
+}
 
 // ---------- 👑 사장 이름 정하기 (처음 한 번) ----------
 export function askBossName() {

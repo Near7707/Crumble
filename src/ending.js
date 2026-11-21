@@ -34,10 +34,10 @@ export function renderEnding(box) {
     const head = `<header class="cr-top biz cr-end"><div class="cr-row"><div class="cr-endSteps">${STEPS.map((s, i) => `<span class="${i === e.step ? 'now' : i < e.step ? 'done' : ''}">${i === e.step ? L(...s) : i + 1}</span>`).join('')}</div>${gearBtn()}${closeBtn()}</div></header><div class="cr-drip dark"></div>`;
     const nav = `<div class="cr-actions cr-endNav"><button class="cr-btn" type="button" data-e="prev" ${e.step === 0 ? 'disabled' : ''}>${L('‹ 이전', '‹ Back')}</button>${e.step < 4 ? `<button class="cr-pbtn" type="button" data-e="next">${[L('직원들에게 알리기', 'Tell the staff'), L('다음', 'Next'), L('다음', 'Next'), L('다음', 'Next')][e.step]} ›</button>` : `<button class="cr-pbtn" type="button" data-e="restart">${L('새 가게 열기', 'Open a new shop')}</button>`}</div>`;
     box.innerHTML = head + `<main class="cr-main cr-endMain"><div class="cr-sceneHost" id="cr-eScene"></div>${body(e.step)}${nav}</main>`;
-    const sc = addScene(createScene(box.querySelector('#cr-eScene'), { size: e.step === 4 ? '11x9' : g.size, height: 210, zoom: .7, focus: [5, 4] }));
+    const sc = addScene(createScene(box.querySelector('#cr-eScene'), { size: e.step === 4 ? '11x9' : g.size, ...(e.step === 4 ? { shopName: e.newShop || '' } : {}), height: 210, zoom: .7, focus: [5, 4] }));
     scene(sc, e.step);
     box.querySelector('#cr-newBoss')?.addEventListener('input', ev => { e.newBoss = ev.target.value.slice(0, 30); save(); });
-    box.querySelector('#cr-newShop')?.addEventListener('input', ev => { e.newShop = ev.target.value.slice(0, 24); save(); });
+    box.querySelector('#cr-newShop')?.addEventListener('input', ev => { e.newShop = ev.target.value.slice(0, 24); save(); sc.shopSign?.(e.newShop); });
     box.querySelector('main').addEventListener('click', ev => {
         const b = ev.target.closest('[data-e]'); if (!b) return;
         const a = b.dataset.e;

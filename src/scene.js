@@ -5,8 +5,9 @@
 
 import { layoutFor, cellsOf } from './layouts.js';
 import { ICON, staffLook, guestLook } from './looks.js';
-import { G, S as settings, save } from './state.js';
+import { G, S as settings, save, shopName } from './state.js';
 import { L } from './i18n.js';
+import { esc } from './util.js';
 
 const TW = 22, TH = 11;
 
@@ -23,6 +24,19 @@ export function createScene(host, opts = {}) {
     const P = (c, r, h = 0) => [OX + (c - r) * TW, OY + (c + r) * TH - h];
     const pt = a => a.map(p => p[0].toFixed(1) + ',' + p[1].toFixed(1)).join(' ');
     const poly = (a, f, sw = 1.3, st = '#8A5A36') => `<polygon points="${pt(a)}" fill="${f}" stroke="${st}" stroke-width="${sw}" stroke-linejoin="round"/>`;
+    // 간판 글자: 간판 폭에 맞게 글씨를 줄이고(최소 6px), 그래도 길면 뒤를 "…"로 자름
+    function signText(name) {
+        const [s1, s2] = lay.sign;
+        const t0 = String(name || '').trim() || 'Crumble';
+        const room = (s2 - s1 - .5) * TW;
+        const w1 = ch => /[\u1100-\u11ff\u3000-\u9fff\uac00-\ud7af\uff00-\uffef]/.test(ch) ? 1.02 : /[A-Z0-9MW@&%]/.test(ch) ? .72 : ch === ' ' ? .3 : .6;
+        const width = (str, fs) => [...str].reduce((a, ch) => a + w1(ch), 0) * fs;
+        let t = t0, fs = 12;
+        if (width(t, fs) > room) fs = Math.max(6, room / width(t, 1));
+        if (width(t, fs) > room) { const a = [...t0]; while (a.length > 1 && width(a.join('') + '…', fs) > room) a.pop(); t = a.join('').trimEnd() + '…'; }
+        const tp = P((s1 + s2) / 2, 0, 68.6 - fs * .36);
+        return `<text transform="matrix(1,0.5,0,1,0,0)" x="${tp[0].toFixed(1)}" y="${(tp[1] - tp[0] * .5).toFixed(1)}" text-anchor="middle" font-family="system-ui,sans-serif" font-weight="800" font-size="${fs.toFixed(1)}" fill="#FFF7EC">${esc(t)}</text>`;
+    }
     const tileC = (c, r) => [OX + (c - r) * TW, OY + (c + r + 1) * TH];
     function box(c, r, w, d, h, z0, top, left, right) {
         const A = P(c, r, z0 + h), B = P(c + w, r, z0 + h), C = P(c + w, r + d, z0 + h), D = P(c, r + d, z0 + h), Bb = P(c + w, r, z0), Cb = P(c + w, r + d, z0), Db = P(c, r + d, z0);
@@ -69,8 +83,7 @@ export function createScene(host, opts = {}) {
         });
         const [s1, s2] = lay.sign;
         h += poly(qA(s1, s2, 60, 76), '#8A5A36');
-        const tp = P(s1 + .4, 0, 64.5);
-        h += `<text transform="matrix(1,0.5,0,1,0,0)" x="${tp[0]}" y="${tp[1] - tp[0] * .5}" font-family="system-ui,sans-serif" font-weight="800" font-size="12" fill="#FFF7EC">Crumble</text>`;
+        h += `<g class="cr-shopSign">${signText(opts.shopName ?? shopName(G()))}</g>`;
         const D = lay.door;
         h += poly(qA(D - .05, D + .85, 0, 58), '#C9813F') + poly(qA(D + .1, D + .7, 30, 50), '#DDEFF5', 1.1);
         const kn = P(D + .7, 0, 24); h += `<circle cx="${kn[0]}" cy="${kn[1]}" r="2" fill="#FBE29A" stroke="#8A5A36"/>`;
@@ -284,6 +297,8 @@ export function createScene(host, opts = {}) {
     api.tint = v => { Q('.cr-tint').style.background = v; };
     api.lamps = v => Q('.cr-lamps').setAttribute('opacity', v);
     api.steam = on => { Q('.cr-steam')?.classList.toggle('on', !!on); Q('.cr-ovenGlow')?.setAttribute('opacity', on ? .8 : .2); };
+    // 벽 간판: 가게 이름 (없으면 Crumble). 이름을 바꾸면 그 자리에서 바로 갈아 끼움
+    api.shopSign = name => { const el = Q('.cr-shopSign'); if (el) el.innerHTML = signText(name); };
     api.sign = t => { const s = Q('.cr-signT'); s.textContent = t; s.setAttribute('fill', t === 'OPEN' ? '#C2603E' : '#6B4226'); };
     api.display = n => {
         api.shelf = n;

@@ -496,7 +496,9 @@ function openScreen(box) {
             await sc.go(e, door);
             e.el.style.opacity = 0; await sc.wait(450);
         } catch { /* 끝 */ }
-        sc.remove(e); B.guests = B.guests.filter(x => x !== q); B.queue = B.queue.filter(x => x !== q);
+        sc.remove(e);
+        if (!B) return; // 영업이 끝난 뒤에 걷기가 끝난 손님
+        B.guests = B.guests.filter(x => x !== q); B.queue = B.queue.filter(x => x !== q);
     };
     const maxGuests = L0.seats.length + 3;
     const spawner = async () => {
