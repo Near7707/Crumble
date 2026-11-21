@@ -233,14 +233,14 @@ let bizAutoPaused = false;
 export function bizTabs() {
     const g = G();
     const t = (id, ico, ko, en, badge) => `<button type="button" class="cr-tab${view.bizTab === id ? ' on' : ''}" data-btab="${id}">${ico} ${L(ko, en)}${badge ? `<b class="cr-badge">${badge}</b>` : ''}</button>`;
-    return `<nav class="cr-tabs cr-bizTabs">${t('biz', '☕', '영업', 'Business')}${t('staff', '👩‍🍳', '직원', 'Staff')}${t('inbox', '📋', '결재함', 'Inbox', g.inbox.length || '')}${t('journal', '📖', '일지', 'Log')}</nav>`;
+    return `<nav class="cr-tabs cr-bizTabs">${t('biz', '☕', '영업', 'Floor')}${t('shop', '🏪', '가게', 'Shop')}${t('staff', '👩‍🍳', '직원', 'Staff')}${t('inbox', '📋', '결재함', 'Inbox', g.inbox.length || '')}${t('journal', '📖', '일지', 'Log')}</nav>`;
 }
 function drawOtherTab() {
     const box = inner();
     const main = box.querySelector('.cr-otherTab'); if (!main) return;
     closeSheet(); closeModal();
     const top = main.scrollTop;
-    main.innerHTML = `<div class="cr-alertCard soft">⏸ ${L('다른 탭을 보는 동안 가게는 멈춰 있어요', 'The shop waits while you look at other tabs')}</div>` + tabBody(view.bizTab);
+    main.innerHTML = `<div class="cr-alertCard soft">⏸ ${L('다른 탭을 보는 동안 가게는 멈춰 있어요', 'The shop waits while you look at other tabs')}</div>` + tabBody(view.bizTab === 'shop' ? 'bizShop' : view.bizTab);
     main.scrollTop = top;
     box.querySelectorAll('.cr-bizTabs [data-btab]').forEach(b => b.classList.toggle('on', b.dataset.btab === view.bizTab));
     const badge = box.querySelector('.cr-bizTabs [data-btab="inbox"] .cr-badge');
@@ -269,6 +269,7 @@ function tabBody(tab = view.tab) {
         case 'staff': return staffTab();
         case 'inbox': return inboxTab();
         case 'journal': return journalTab();
+        case 'bizShop': return shopTab(true);
         default: return shopTab();
     }
 }
@@ -291,10 +292,12 @@ function doingLabel(s) {
 }
 
 // ---------- 🏪 가게 탭 ----------
-function shopTab() {
+/** biz = 영업 중 탭에서 볼 때: 작은 장면·버튼 없이 로그·수치·직원만 */
+function shopTab(biz = false) {
     const g = G();
     const w = g.staff;
-    let h = `<div class="cr-sceneHost" id="cr-shopScene"></div>`;
+    let h = biz ? `<p class="cr-muted">☕ ${L('오늘 영업에서 생긴 일은 ☕ 영업 화면의 "지금 가게 소식"에 있어요. 가게 로그에는 마감 뒤에 들어가요.', 'Today\'s happenings are in Shop news on the ☕ Floor tab. They go into the shop log after closing.')}</p>`
+        : `<div class="cr-sceneHost" id="cr-shopScene"></div>`;
     // 오늘 영업 끝: 결과 카드가 먼저, 가게 로그는 그 아래
     if (g.phase !== 'done') h += shopLogHtml(g);
     // 오늘 영업 끝: 그날 운영 결과 + [다음 날 시작]
@@ -302,15 +305,20 @@ function shopTab() {
     // 수치 2×2
     const last = g.journal[0];
     h += `<section class="cr-grid2">
-<div class="cr-stat"><div class="cr-statT">💰 ${L('돈', 'Money')}</div><b class="${g.money < 0 ? 'neg' : ''}">${money(g.money)}</b><small>${last ? F(L('어제 {d}', 'Yesterday {d}'), { d: signedMoney(last.delta?.money || 0) }) : L('첫날이에요', 'First day')}</small></div>
+<div class="cr-stat"><div class="cr-statT">💰 ${L('돈', 'Money')}</div><b class="${g.money < 0 ? 'neg' : ''}">${money(g.money)}</b><small>${biz && g.phase === 'morning' ? L('재료값은 영업을 시작할 때 빠져요', 'Stock is paid when you open') : last ? F(L('어제 {d}', 'Yesterday {d}'), { d: signedMoney(last.delta?.money || 0) }) : L('첫날이에요', 'First day')}</small></div>
 <div class="cr-stat"><div class="cr-statT">⭐ ${L('평판', 'Reputation')} <b>${Math.round(g.rep)}</b></div>${bar(g.rep, '#F29A7C')}<small>${g.rep < 35 ? L('손님이 뜸해요', 'Few customers') : g.rep < 65 ? L('동네에서 알아봐요', 'Known locally') : L('줄 서는 가게!', 'People line up!')}</small></div>
 <div class="cr-stat"><div class="cr-statT">🍰 ${L('재료', 'Stock')} <b>${g.ing}</b></div>${bar(g.ing * 3, '#FBE29A')}<small>${g.ing < 6 ? L('곧 바닥나요', 'Running low') : L('디저트는 남으면 상해요', 'Desserts spoil if left')}</small></div>
 <div class="cr-stat"><div class="cr-statT">🧼 ${L('청결', 'Clean')} <b>${Math.round(g.clean)}</b></div>${bar(g.clean, '#BFD9E8')}<small>${g.clean < 35 ? L('위생 점검이 걱정돼요', 'Inspection risk') : L('바닥 반짝반짝', 'Floors are shiny')}</small></div></section>`;
     // 오늘 출근한 직원 (한 줄씩)
     h += `<section class="cr-card"><div class="cr-ttl">👩‍🍳 ${L('오늘 출근한 직원', 'Staff today')}<small>${g.staff.length}/${MAX_STAFF}</small></div>`;
     if (!w.length) h += `<div class="cr-empty">${L('아직 직원이 없어요. 캐릭터 카드에서 데려와 주세요.', 'No staff yet. Bring someone in from your character cards.')}<button class="cr-btn" type="button" data-act="hire">${L('직원 고용', 'Hire staff')}</button></div>`;
-    else h += w.map(s => `<button type="button" class="cr-who" data-act="findStaff" data-id="${esc(s.id)}">${faceChip(s.id, 30)}<b>${esc(book(s.id)?.name)}</b>${heartRow(bossRel(s.id))}<span class="cr-doing${s.absent ? ' off' : ''}">${doingLabel(s)}</span></button>`).join('');
+    else h += w.map(s => {
+        const body = `${faceChip(s.id, 30)}<b>${esc(book(s.id)?.name)}</b>${heartRow(bossRel(s.id))}<span class="cr-doing${s.absent ? ' off' : ''}">${doingLabel(s)}</span>`;
+        // 영업 중엔 가게 탭에 작은 장면이 없어서 눌러서 찾기는 안 함
+        return biz ? `<div class="cr-who">${body}</div>` : `<button type="button" class="cr-who" data-act="findStaff" data-id="${esc(s.id)}">${body}</button>`;
+    }).join('');
     h += `</section>`;
+    if (biz) return h;
     // 버튼
     let main;
     if (g.phase === 'ready') main = `<button class="cr-pbtn" type="button" data-act="startDay" ${w.filter(s => !s.absent).length ? '' : 'disabled'}>${L('오늘 영업 시작 ›', 'Open the shop ›')}</button>`;
