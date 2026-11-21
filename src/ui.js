@@ -34,25 +34,36 @@ export function mount() {
     root.querySelector('.cr-dim').addEventListener('click', () => { if (!root.querySelector('.cr-sheet').classList.contains('lock')) closeSheet(); closeModal(); });
     // 실리태번 쪽 단축키·스와이프가 창 안에서 안 걸리게
     ['keydown', 'touchstart', 'touchmove', 'wheel'].forEach(t => root.addEventListener(t, e => e.stopPropagation(), { passive: true }));
+    // 글 입력칸을 누르면(키보드가 올라옴) 이름 창 등을 화면 위쪽에 붙이고, 창 위치도 다시 맞춘다
+    root.addEventListener('focusin', e => { if (isTextInput(e.target) && touchScreen()) { root.classList.add('cr-kb'); fitSoon(); } });
+    root.addEventListener('focusout', e => { if (isTextInput(e.target)) { setTimeout(() => { if (!isTextInput(document.activeElement)) root.classList.remove('cr-kb'); }, 50); fitSoon(); } });
     return root;
 }
 export const inner = () => root.querySelector('.cr-inner');
+const isTextInput = el => !!el && root?.contains(el) && (el.tagName === 'TEXTAREA' || (el.tagName === 'INPUT' && !['checkbox', 'radio', 'range', 'button'].includes(el.type)));
+// 폰(손가락으로 누르는 화면)에서는 창이 열리자마자 키보드가 뜨지 않게 자동 선택을 안 함
+const touchScreen = () => window.matchMedia?.('(pointer: coarse)').matches;
+const autoFocus = el => { if (el && !touchScreen()) el.focus(); };
 
 // 창을 "지금 눈에 보이는 화면"에 딱 맞춘다.
 // 아이폰 사파리는 페이지 전체 크기와 보이는 화면이 어긋날 수 있어서, fixed + inset:0 만으로는 창이 위로 밀려 잘린다.
+// 키보드가 올라오면 아이폰이 페이지를 밀기 때문에 그때마다 다시 맞춘다.
 function fitToScreen() {
     if (!root || !root.classList.contains('open')) return;
     const vv = window.visualViewport;
     const w = vv ? vv.width : window.innerWidth, h = vv ? vv.height : window.innerHeight;
     const x = vv ? vv.offsetLeft : 0, y = vv ? vv.offsetTop : 0;
-    Object.assign(root.style, { inset: 'auto', left: x + 'px', top: y + 'px', width: w + 'px', height: h + 'px' });
-    // 부모 요소 때문에 기준점이 다르면 실제 위치를 재서 한 번 더 맞춘다
+    // 먼저 (0,0)에 놓고 재서, 기준점이 화면이 아닌 경우(부모 요소 때문)만 그만큼 보정한다.
+    // 화면 기준이면 잰 값은 0이거나(-보이는 화면 위치)라서 보정하지 않는다 → 같은 거리를 두 번 미는 일이 없음.
+    Object.assign(root.style, { inset: 'auto', left: '0px', top: '0px', width: w + 'px', height: h + 'px' });
     const r = root.getBoundingClientRect();
-    const dx = x - r.left, dy = y - r.top;
-    if (Math.abs(dx) > 1 || Math.abs(dy) > 1) { root.style.left = (x + dx) + 'px'; root.style.top = (y + dy) + 'px'; }
+    const onScreen = (a, off) => Math.abs(a) <= 1 || Math.abs(a + off) <= 1;
+    const bx = onScreen(r.left, x) ? 0 : r.left, by = onScreen(r.top, y) ? 0 : r.top;
+    root.style.left = (x - bx) + 'px'; root.style.top = (y - by) + 'px';
 }
-let fitT = null;
-const fitSoon = () => { clearTimeout(fitT); fitT = setTimeout(fitToScreen, 60); };
+let fitT = [];
+// 키보드가 올라오는 동안 아이폰이 페이지를 여러 번 밀어서, 조금 뒤에도 몇 번 더 맞춘다
+const fitSoon = () => { fitT.forEach(clearTimeout); fitT = [60, 300, 700].map(ms => setTimeout(fitToScreen, ms)); };
 window.visualViewport?.addEventListener('resize', fitSoon);
 window.visualViewport?.addEventListener('scroll', fitSoon);
 window.addEventListener('orientationchange', fitSoon);
@@ -588,7 +599,7 @@ ${askShop ? `<label class="cr-field">${L('가게 이름', 'Shop name')}<input cl
     };
     m.querySelector('[data-act="bossOk"]').onclick = e => { e.stopPropagation(); ok(); };
     m.querySelectorAll('input').forEach(inp => inp.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); ok(); } }));
-    m.querySelector('input')?.focus();
+    autoFocus(m.querySelector('input'));
 }
 function askShopName() {
     const g = G();
@@ -599,7 +610,7 @@ function askShopName() {
     const ok = () => { setShopName(inp.value, 'game'); closeModal(); };
     m.querySelector('[data-act="shopOk"]').onclick = e => { e.stopPropagation(); ok(); };
     inp.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); ok(); } });
-    inp.focus();
+    autoFocus(inp);
 }
 let toastT = null;
 export function toast(t, ms = 2600) {

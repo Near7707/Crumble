@@ -232,6 +232,9 @@ details.cr-card summary { cursor: pointer; font-weight: 700; font-size: 13px; }
 /* 모달 */
 .cr-modal { position: absolute; left: 12px; right: 12px; top: 50%; transform: translateY(-50%) scale(.96); z-index: 95; background: var(--cr-card); border: 2.5px solid var(--cr-brown); border-radius: 20px; padding: 14px; max-height: 86%; overflow-y: auto; opacity: 0; pointer-events: none; transition: .2s; display: flex; flex-direction: column; gap: 8px; }
 .cr-modal.open { opacity: 1; pointer-events: auto; transform: translateY(-50%); }
+/* 키보드가 올라와 있을 땐 보이는 화면 위쪽에 붙이고, 넘치면 창 안에서 스크롤 */
+#crumble-root.cr-kb .cr-modal { top: calc(env(safe-area-inset-top, 0px) + 8px); transform: scale(.96); max-height: calc(100% - 16px - env(safe-area-inset-top, 0px)); }
+#crumble-root.cr-kb .cr-modal.open { transform: none; }
 .cr-mtitle { font-size: 16px; font-weight: 800; display: flex; flex-direction: column; }
 .cr-mtitle small { font-weight: 400; font-size: 12px; color: var(--cr-sub); }
 .cr-mtext { margin: 4px 0; font-size: 14px; }
