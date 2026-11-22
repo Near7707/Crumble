@@ -78,11 +78,12 @@ let kbFullH = 0, kbRaf = 0, kbStop = 0;
 const vvH = () => window.visualViewport ? window.visualViewport.height : window.innerHeight;
 function kbStart() {
     if (kbRaf) { cancelAnimationFrame(kbRaf); kbRaf = 0; }
-    else if (!root.classList.contains('cr-kb')) kbFullH = vvH();
+    else if (!root.classList.contains('cr-kb')) { kbFullH = vvH(); vpBegin(); }
     root.classList.add('cr-kb');
 }
 function kbEnd() {
     if (!root?.classList.contains('cr-kb') || kbRaf) return;
+    vpClose();
     kbStop = performance.now() + 3000;
     const step = () => {
         fitToScreen();
@@ -109,9 +110,65 @@ const fitSoon = () => {
     if (!fitRaf) fitFollow();
     fitT.forEach(clearTimeout); fitT = [1100, 1500].map(ms => setTimeout(fitToScreen, ms));
 };
-window.visualViewport?.addEventListener('resize', fitSoon);
-window.visualViewport?.addEventListener('scroll', fitSoon);
+window.visualViewport?.addEventListener('resize', () => { vpMark('vv resize'); fitSoon(); });
+window.visualViewport?.addEventListener('scroll', () => { vpMark('vv scroll'); fitSoon(); });
 window.addEventListener('orientationchange', fitSoon);
+
+// ── 문제 찾기용: 화면 위치 기록 (설정 "화면 위치 기록", 기본 끔) ──
+// 입력 시작 전 값 1줄 + 키보드 뜬 뒤 1줄, 그리고 입력을 끝낸 순간부터 5초 동안 값이 바뀔 때마다 1줄씩 적어
+// 끝나면 화면 왼쪽 위에 표로 보여 준다 (사용자가 캡처해서 보내 주는 용도). 끄면 아무것도 안 함.
+let vpLog = null, vpT0 = 0, vpLast = '', vpRaf = 0, vpUntil = 0;
+const vpOn = () => !!S().vpDebug;
+function vpRow(ev = '') {
+    if (!vpLog) return;
+    const vv = window.visualViewport, r = root?.getBoundingClientRect();
+    const v = [vv ? Math.round(vv.height) : '-', vv ? Math.round(vv.offsetTop) : '-', window.innerHeight, Math.round(window.scrollY),
+        r ? Math.round(r.top) : '-', r ? Math.round(r.height) : '-', root?.classList.contains('cr-kb') ? 'kb' : ''];
+    const k = v.join(' ');
+    if (!ev && k === vpLast) return;
+    vpLast = k;
+    vpLog.push([vpT0 ? Math.round(performance.now() - vpT0) : 'before', ...v, ev]);
+    if (vpLog.length > 40) vpLog.splice(3, 1);
+}
+function vpMark(ev) { if (vpLog && (vpRaf || !vpT0)) vpRow(ev); }
+function vpBegin() {
+    if (!vpOn()) { vpLog = null; return; }
+    if (vpRaf) { cancelAnimationFrame(vpRaf); vpRaf = 0; }
+    vpLog = []; vpT0 = 0; vpLast = '';
+    vpRow(L('입력 전', 'before typing'));
+    setTimeout(() => { if (vpLog && !vpT0) vpRow(L('키보드 뜬 뒤', 'keyboard up')); }, 1200);
+}
+function vpClose() {
+    if (!vpLog || !vpOn()) return;
+    vpT0 = performance.now(); vpLast = '';
+    vpRow(L('닫음', 'closed'));
+    vpUntil = vpT0 + 5000;
+    const step = () => {
+        vpRow();
+        if (performance.now() < vpUntil) { vpRaf = requestAnimationFrame(step); return; }
+        vpRaf = 0; vpRow(L('5초', '5s')); vpShow();
+    };
+    vpRaf = requestAnimationFrame(step);
+}
+function vpShow() {
+    const log = vpLog; vpLog = null; vpT0 = 0;
+    if (!log) return;
+    document.getElementById('crumble-vplog')?.remove();
+    const box = document.createElement('div');
+    box.id = 'crumble-vplog';
+    Object.assign(box.style, { position: 'fixed', left: '6px', top: '6px', zIndex: 2147483647, background: 'rgba(20,12,6,.88)', color: '#fff',
+        font: '10px/1.35 ui-monospace,Menlo,monospace', padding: '6px 8px', borderRadius: '8px', maxWidth: 'calc(100vw - 12px)', maxHeight: '80vh', overflow: 'auto', whiteSpace: 'pre' });
+    const head = ['ms', 'vvH', 'vvTop', 'inH', 'scrY', 'top', 'h', 'kb', ''];
+    const rows = [head, ...log].map(r => r.map((c, i) => String(c).padStart(i === 8 ? 0 : i === 0 ? 6 : 5)).join(' ')).join('\n');
+    box.textContent = `Crumble ${L('화면 위치 기록', 'screen log')} · screen ${screen.width}×${screen.height}\n` + rows;
+    const x = document.createElement('button');
+    x.textContent = '✕';
+    Object.assign(x.style, { position: 'sticky', float: 'right', top: '0', marginLeft: '8px', background: '#fff', color: '#000', border: '0', borderRadius: '6px', padding: '2px 8px', font: '14px sans-serif' });
+    x.onclick = () => box.remove();
+    box.prepend(x);
+    ['touchstart', 'touchmove', 'wheel', 'click'].forEach(t => box.addEventListener(t, e => e.stopPropagation(), { passive: true }));
+    document.body.appendChild(box);
+}
 
 // 창 크기: 자동이면 폰은 작게(꽉 차게), 컴퓨터는 크게
 export function winSizeNow() {
@@ -129,6 +186,7 @@ export function applyWinSize() {
 }
 let resizeT = null;
 window.addEventListener('resize', () => {
+    vpMark('win resize');
     fitSoon();
     if (!view.open || (S().winSize || 'auto') !== 'auto') return;
     clearTimeout(resizeT);

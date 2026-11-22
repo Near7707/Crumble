@@ -74,6 +74,8 @@ export function fieldsHtml(scope) {
         `<select id="${id('lang')}" data-s="lang" class="${sel}">${opt('auto', s.lang, L('자동 (실리태번 언어)', 'Auto (SillyTavern language)'))}${opt('ko', s.lang, '한국어')}${opt('en', s.lang, 'English')}</select>` +
         check('rememberZoom', L('확대해서 보던 위치 기억하기', 'Remember zoom & position')) +
         check('staffTags', L('영업 중 직원 머리 위에 하는 일 글로 보기', 'Show what staff are doing above their heads')) +
+        check('vpDebug', L('화면 위치 기록 (문제 찾기용)', 'Record screen position (for troubleshooting)')) +
+        note(L('켜 두면 폰에서 글을 입력하고 창을 닫은 뒤 5초 동안 화면 위치를 기록해서 왼쪽 위에 표로 보여 줘요. 평소엔 꺼 두세요.', 'When on, after typing on a phone and closing a window, screen positions are recorded for 5 seconds and shown as a table at the top left. Keep it off normally.')) +
         group(L('🤖 AI', '🤖 AI')) +
         lab('profile', L('AI 연결', 'AI connection')) +
         `<select id="${id('profile')}" data-s="profileId" class="${sel}">${profileOptions()}</select>` +
@@ -114,6 +116,7 @@ export function bindFields(box, scope) {
         // 끄면 지금 떠 있는 이름표도 바로 지움 (켜면 다음 행동부터 다시 뜸)
         if (!t.checked) document.querySelectorAll('#crumble-root .cr-stag').forEach(x => { x.parentElement?.classList.remove('cr-hasTag'); x.remove(); });
     });
+    on('vpDebug', 'change', t => { s.vpDebug = t.checked; if (!t.checked) document.getElementById('crumble-vplog')?.remove(); });
     on('profileId', 'change', t => { s.profileId = t.value; refreshProfileSelects(); });
     on('cardRef', 'change', t => { s.cardRef = t.value; });
     on('responseLength', 'change', t => { s.responseLength = Math.max(400, Math.min(8000, +t.value || 1600)); t.value = s.responseLength; });

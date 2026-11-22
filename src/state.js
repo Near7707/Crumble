@@ -45,6 +45,7 @@ const DEFAULT_SETTINGS = {
     autoDayHours: 8, // 창을 닫고 이만큼(시간) 지날 때마다 직원들끼리 하루 영업 (최대 3일)
     rememberZoom: false,
     staffTags: true, // 0.2.0 영업 장면 직원 머리 위 글 이름표
+    vpDebug: false, // 0.2.11 문제 찾기용 화면 위치 기록 (아이폰 키보드)
     responseLength: 1600,
     profileId: '', // '' = 지금 연결 그대로
     bossName: '', // '' = 페르소나 이름
