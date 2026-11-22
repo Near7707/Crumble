@@ -50,7 +50,10 @@ const autoFocus = el => { if (el && !touchScreen()) el.focus(); };
 // 키보드가 올라오면 아이폰이 페이지를 밀기 때문에 그때마다 다시 맞춘다.
 function fitToScreen() {
     if (!root || !root.classList.contains('open')) return;
-    const vv = window.visualViewport;
+    let vv = window.visualViewport;
+    // 키보드를 닫은 직후 아이폰은 약 0.4초 동안 "보이는 화면" 값을 키보드 있을 때 그대로 알려 준다 (0.2.11 기록으로 확인).
+    // 그동안 페이지 높이는 이미 원래대로라서, 그 틀린 값 대신 페이지 기준(꽉 채우기)으로 맞춘다.
+    if (vv && kbClosing && window.innerHeight >= kbFullH - 4 && vv.height < window.innerHeight - 4) vv = null;
     const w = vv ? vv.width : window.innerWidth, h = vv ? vv.height : window.innerHeight;
     const x = vv ? vv.offsetLeft : 0, y = vv ? vv.offsetTop : 0;
     // 먼저 (0,0)에 놓고 재서, 기준점이 화면이 아닌 경우(부모 요소 때문)만 그만큼 보정한다.
@@ -74,9 +77,10 @@ function endTyping() {
 // 아이폰은 키보드를 다 내린 뒤에야 "화면이 커졌다"를 알려 줘서, 1초만 맞추면 창이 키보드 있을 때 크기로 잠깐 남는다.
 // → 키보드 뜨기 전 화면 높이를 기억해 두고, 높이가 그만큼 돌아올 때까지(최대 3초) 매 프레임 맞춘다.
 //   창을 위쪽에 붙이는 cr-kb도 그때 뺀다 (키보드가 아직 떠 있는데 가운데로 옮기지 않게).
-let kbFullH = 0, kbRaf = 0, kbStop = 0;
+let kbFullH = 0, kbRaf = 0, kbStop = 0, kbClosing = false;
 const vvH = () => window.visualViewport ? window.visualViewport.height : window.innerHeight;
 function kbStart() {
+    kbClosing = false;
     if (kbRaf) { cancelAnimationFrame(kbRaf); kbRaf = 0; }
     else if (!root.classList.contains('cr-kb')) { kbFullH = vvH(); vpBegin(); }
     root.classList.add('cr-kb');
@@ -85,11 +89,14 @@ function kbEnd() {
     if (!root?.classList.contains('cr-kb') || kbRaf) return;
     vpClose();
     kbStop = performance.now() + 3000;
+    kbClosing = kbFullH > 0;
     const step = () => {
         fitToScreen();
+        // 페이지가 원래 높이로 돌아왔으면 위쪽 붙이기(cr-kb)는 바로 푼다
+        if (kbFullH > 0 && window.innerHeight >= kbFullH - 4) root.classList.remove('cr-kb');
         const back = kbFullH > 0 && vvH() >= kbFullH - 4;
         if (back || performance.now() >= kbStop) {
-            kbRaf = 0;
+            kbRaf = 0; kbClosing = false;
             root.classList.remove('cr-kb');
             fitSoon();
             return;
