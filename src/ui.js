@@ -35,8 +35,8 @@ export function mount() {
     // 실리태번 쪽 단축키·스와이프가 창 안에서 안 걸리게
     ['keydown', 'touchstart', 'touchmove', 'wheel'].forEach(t => root.addEventListener(t, e => e.stopPropagation(), { passive: true }));
     // 글 입력칸을 누르면(키보드가 올라옴) 이름 창 등을 화면 위쪽에 붙이고, 창 위치도 다시 맞춘다
-    root.addEventListener('focusin', e => { if (isTextInput(e.target) && touchScreen()) { root.classList.add('cr-kb'); fitSoon(); } });
-    root.addEventListener('focusout', e => { if (isTextInput(e.target)) { setTimeout(() => { if (!isTextInput(document.activeElement)) root.classList.remove('cr-kb'); }, 50); fitSoon(); } });
+    root.addEventListener('focusin', e => { if (isTextInput(e.target) && touchScreen()) { kbStart(); fitSoon(); } });
+    root.addEventListener('focusout', e => { if (isTextInput(e.target)) { setTimeout(() => { if (!isTextInput(document.activeElement)) kbEnd(); }, 50); fitSoon(); } });
     return root;
 }
 export const inner = () => root.querySelector('.cr-inner');
@@ -68,8 +68,34 @@ function endTyping() {
     const typing = isTextInput(a);
     if (!typing && !root?.classList.contains('cr-kb')) return;
     if (typing) a.blur();
-    root.classList.remove('cr-kb');
-    fitSoon();
+    kbEnd();
+}
+// 키보드가 내려가는 동안 따라 맞추기.
+// 아이폰은 키보드를 다 내린 뒤에야 "화면이 커졌다"를 알려 줘서, 1초만 맞추면 창이 키보드 있을 때 크기로 잠깐 남는다.
+// → 키보드 뜨기 전 화면 높이를 기억해 두고, 높이가 그만큼 돌아올 때까지(최대 3초) 매 프레임 맞춘다.
+//   창을 위쪽에 붙이는 cr-kb도 그때 뺀다 (키보드가 아직 떠 있는데 가운데로 옮기지 않게).
+let kbFullH = 0, kbRaf = 0, kbStop = 0;
+const vvH = () => window.visualViewport ? window.visualViewport.height : window.innerHeight;
+function kbStart() {
+    if (kbRaf) { cancelAnimationFrame(kbRaf); kbRaf = 0; }
+    else if (!root.classList.contains('cr-kb')) kbFullH = vvH();
+    root.classList.add('cr-kb');
+}
+function kbEnd() {
+    if (!root?.classList.contains('cr-kb') || kbRaf) return;
+    kbStop = performance.now() + 3000;
+    const step = () => {
+        fitToScreen();
+        const back = kbFullH > 0 && vvH() >= kbFullH - 4;
+        if (back || performance.now() >= kbStop) {
+            kbRaf = 0;
+            root.classList.remove('cr-kb');
+            fitSoon();
+            return;
+        }
+        kbRaf = requestAnimationFrame(step);
+    };
+    kbRaf = requestAnimationFrame(step);
 }
 let fitT = [], fitRaf = 0, fitUntil = 0;
 // 키보드가 올라오는 동안 아이폰이 페이지를 여러 번 밀어서, 약 1초 동안은 화면이 바뀔 때마다(매 프레임) 따라 맞춘다.
