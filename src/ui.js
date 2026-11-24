@@ -16,6 +16,7 @@ import { line, tapLine } from './lines.js';
 import { renderBusiness, resumeIfNeeded, businessActive, pauseBusiness, bizPaused, addBacklog } from './screens.js';
 import { fieldsHtml, bindFields, onSettings, personaName, setBossName, setShopName } from './settings.js';
 import { renderEnding } from './ending.js';
+import { hrAction, ruleCardHtml } from './hrui.js';
 
 export const view = { tab: 'shop', staffIdx: 0, staffSub: 'stats', journal: 'this', open: false, bizTab: 'biz', logFilter: 'all', logFold: {} };
 let root = null, scenes = [], shopTimer = null, awayBusy = false;
@@ -355,9 +356,9 @@ function shopTab(biz = false) {
     let h = biz ? `<p class="cr-muted">☕ ${L('오늘 영업에서 생긴 일은 ☕ 영업 화면의 "지금 가게 소식"에 있어요. 가게 로그에는 마감 뒤에 들어가요.', 'Today\'s happenings are in Shop news on the ☕ Floor tab. They go into the shop log after closing.')}</p>`
         : `<div class="cr-sceneHost" id="cr-shopScene"></div>`;
     // 오늘 영업 끝: 결과 카드가 먼저, 가게 로그는 그 아래
-    if (g.phase !== 'done') h += shopLogHtml(g);
+    if (g.phase !== 'done') h += shopLogHtml(g) + ruleCardHtml(g);
     // 오늘 영업 끝: 그날 운영 결과 + [다음 날 시작]
-    if (g.phase === 'done') h += dayResultHtml(g) + shopLogHtml(g);
+    if (g.phase === 'done') h += dayResultHtml(g) + shopLogHtml(g) + ruleCardHtml(g);
     // 수치 2×2
     const last = g.journal[0];
     h += `<section class="cr-grid2">
@@ -924,6 +925,7 @@ async function onClick(e) {
     if (t.dataset.btab) { switchBizTab(t.dataset.btab); return; }
     const g = G();
     const a = t.dataset.act;
+    if (a?.startsWith('hr') && hrAction(a, t)) return; // 0.3.0 가게 대책
     switch (a) {
         case 'close': closeWindow(); break;
         case 'settings': openSettings(); break;

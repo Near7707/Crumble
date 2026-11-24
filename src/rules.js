@@ -4,7 +4,8 @@ import {
     G, S, save, book, staffById, rel, addRel, bossRel, remember, addJournal, addExp,
     WAGE, ING_PRICE, MAX_INBOX, menuInfo, MENU_POOL,
 } from './state.js';
-import { L } from './i18n.js';
+import { L, money } from './i18n.js';
+import { rulesDayStart, rulesDayEnd, filterAutoPicks, ruleMul } from './houserules.js';
 
 // ---------- 성격 태그 (사건 고르기·장면 행동에만 씀) ----------
 export const TAGS = {
@@ -83,6 +84,7 @@ export function startDay(g) {
     g.weather = rollWeather();
     g.today = null;
     g.effects = g.effects.filter(e => e.until >= g.day);
+    rulesDayStart(g);
     // 아침 회복 · 결근
     for (const s of g.staff) {
         s.fatigue = clamp((s.fatigue ?? 30) - 28, 0, 100);
@@ -358,6 +360,8 @@ export function pickEvents(g, mode = 'direct', count = null) {
         if (lowGuest && !k.tiers.includes(tier)) weight *= .5;
         // 최근 이틀 안에 나온 사건은 덜 나오게 (막지는 않음)
         if (recent.has(id)) weight *= .2;
+        // 0.3.0 대책이 걸린 직원의 몰래 먹기는 덜 나오게
+        if (id === 'sneak') weight *= ruleMul(g, staffIds[0], 'sneak');
         // 감싸줌 → 나중에 터짐
         if (k.pair === 'bad' && g.pending.some(p => staffIds.includes(p.a))) weight *= 2;
         pool.push({ kind: id, staffIds, weight });
@@ -529,7 +533,7 @@ export function deltaChips(d, ev, exp) {
     const nm = book(ev?.staffIds?.[0])?.name || '';
     const sg = v => (v > 0 ? '+' : '−') + Math.abs(v);
     if (d.rep) out.push({ t: L('평판 ', 'Rep ') + sg(d.rep), good: d.rep > 0 });
-    if (d.money) out.push({ t: L('돈 ', '₩ ') + sg(d.money).replace(/(\d)(?=(\d{3})+$)/g, '$1,') + L('원', ''), good: d.money > 0 });
+    if (d.money) out.push({ t: L('돈 ', 'Money ') + (d.money > 0 ? '+' : '−') + money(Math.abs(d.money)), good: d.money > 0 });
     if (d.ing) out.push({ t: L('재료 ', 'Stock ') + sg(d.ing), good: d.ing > 0 });
     if (d.clean) out.push({ t: L('청결 ', 'Clean ') + sg(d.clean), good: d.clean > 0 });
     if (d.mood) out.push({ t: `${nm} ${L('기분', 'mood')} ${d.mood > 0 ? '↑' : '↓'}`, good: d.mood > 0 });
@@ -565,7 +569,7 @@ export function deltaText(d) {
     const parts = [];
     const sg = v => (v > 0 ? '+' : '−') + Math.abs(v);
     if (d.rep) parts.push(L('평판 ', 'Rep ') + sg(d.rep));
-    if (d.money) parts.push(L('돈 ', '₩ ') + sg(d.money).replace(/(\d)(?=(\d{3})+$)/g, '$1,'));
+    if (d.money) parts.push(L('돈 ', 'Money ') + (d.money > 0 ? '+' : '−') + money(Math.abs(d.money), L(false, true)));
     if (d.ing) parts.push(L('재료 ', 'Stock ') + sg(d.ing));
     if (d.clean) parts.push(L('청결 ', 'Clean ') + sg(d.clean));
     if (d.mood) parts.push(L('기분 ', 'Mood ') + (d.mood > 0 ? '↑' : '↓'));
@@ -599,6 +603,8 @@ export function closeDay(g, biz) {
     g.money -= wages;
     let interest = 0;
     if (g.loan > 0) { interest = Math.round(g.loan * .05); g.money -= interest; }
+    // 0.3.0 대책: 비용·매일 효과·아직 안 드러난 결과
+    const hrItems = rulesDayEnd(g, biz);
     // 진열대 남은 것·재료 상함
     const spoiled = Math.floor(g.ing * .4);
     g.ing -= spoiled;
@@ -630,7 +636,7 @@ export function closeDay(g, biz) {
     g.stats.directDays += 1;
     g.stats.maxRep = Math.max(g.stats.maxRep, Math.round(g.rep));
     if (!g.stats.bestDay || biz.revenue > g.stats.bestDay.revenue) g.stats.bestDay = { day: g.day, revenue: biz.revenue, served: biz.served, weather: g.weather };
-    const summary = { wages, interest, spoiled, net, served: biz.served, revenue: biz.revenue };
+    const summary = { wages, interest, spoiled, net, served: biz.served, revenue: biz.revenue, ruleCost: biz.ruleCost || 0 };
     biz.summary = summary;
     addJournal({
         day: g.day, mode: 'direct', weather: g.weather,
@@ -645,6 +651,7 @@ export function closeDay(g, biz) {
     ch.stats = { guests: biz.served, sales: biz.revenue, leak };
     ch.items.push(...(biz.news || []).filter(n => !String(n.key).startsWith('ev')).slice(-14)
         .map(n => ({ t: n.t, k: n.k, text: n.text, chip: n.chip || '', good: !!n.good, sid: n.sid || null, boss: !!n.boss, follow: !!n.follow, cc: n.cc || '' })));
+    ch.items.push(...hrItems.map(x => ({ t: L('마감', 'Close'), k: x.k, text: x.text, chip: x.chip, good: !!x.good, sid: x.sid || null, boss: !!x.boss, cc: x.cc || '' })));
     for (const l of biz.log) if (l.delta?.rep >= 5 || l.delta?.rep <= -5 || ['reviewer', 'group', 'fight', 'inspection'].includes(l.kind)) g.stats.memorable.push({ day: g.day, title: l.title, text: l.result || l.line || l.choice });
     if (g.stats.memorable.length > 30) g.stats.memorable.splice(0, g.stats.memorable.length - 30);
     makeInbox(g);
@@ -683,12 +690,12 @@ export function makeInbox(g) {
 export function inboxInfo(it) {
     const nm = it.staffId ? book(it.staffId)?.name : '';
     switch (it.kind) {
-        case 'loan': return { tag: 'money', title: L('급전 대출', 'Emergency loan'), desc: L('50,000원을 빌려요. 다 갚을 때까지 매일 이자 5%가 나가요.', 'Borrow ₩50,000. 5% interest every day until repaid.'), a: L('빌린다', 'Borrow'), b: L('안 빌린다', 'No thanks') };
-        case 'repay': return { tag: 'money', title: L('대출 갚기', 'Repay the loan'), desc: L(`빌린 돈 ${g_loan()}을 한 번에 갚아요.`, `Pay back the ${g_loan()} loan in full.`), a: L('갚는다', 'Repay'), b: L('나중에', 'Later') };
+        case 'loan': return { tag: 'money', title: L('급전 대출', 'Emergency loan'), desc: L('50,000원을 빌려요. 다 갚을 때까지 매일 이자 5%가 나가요.', `Borrow ${money(50000)}. 5% interest every day until repaid.`), a: L('빌린다', 'Borrow'), b: L('안 빌린다', 'No thanks') };
+        case 'repay': return { tag: 'money', title: L('대출 갚기', 'Repay the loan'), desc: L(`빌린 돈 ${g_loan()}을 한 번에 갚아요.`, `Pay back the ${money(G()?.loan || 0)} loan in full.`), a: L('갚는다', 'Repay'), b: L('나중에', 'Later') };
         case 'wagecut': return { tag: 'money', title: L('월급 깎기', 'Cut wages'), desc: L('모두의 월급을 30% 줄여요. 직원들 마음이 크게 멀어져요.', 'Cut everyone\'s pay by 30%. Staff will resent it.'), a: L('깎는다', 'Cut'), b: L('그대로', 'Keep as is') };
-        case 'quit': return { tag: 'complaint', title: L(`${nm}: 그만두겠대요`, `${nm} wants to quit`), desc: L('붙잡으려면 보너스 20,000원이 들어요.', 'Keeping them costs a ₩20,000 bonus.'), a: L('보너스 주고 붙잡기', 'Pay bonus, keep them'), b: L('보내 주기', 'Let them go') };
+        case 'quit': return { tag: 'complaint', title: L(`${nm}: 그만두겠대요`, `${nm} wants to quit`), desc: L('붙잡으려면 보너스 20,000원이 들어요.', `Keeping them costs a ${money(20000)} bonus.`), a: L('보너스 주고 붙잡기', 'Pay bonus, keep them'), b: L('보내 주기', 'Let them go') };
         case 'complaint': return { tag: 'complaint', title: L(`${nm}의 불만`, `${nm}'s complaint`), desc: L('하루 쉬게 해 주면 기분이 나아질 거예요.', 'A day off would lift their mood.'), a: L('내일 쉬게 해 주기', 'Give them tomorrow off'), b: L('무시하기', 'Ignore it') };
-        case 'menu': { const m = menuInfo(it.menuId); return { tag: 'idea', title: L(`신메뉴 제안: ${m.n[0]}`, `New menu idea: ${m.n[1]}`), desc: L(`개발비 15,000원. 메뉴에 ${m.n[0]}이 늘어요.`, `₩15,000 to develop. Adds ${m.n[1]} to the menu.`), a: L('해 보자', 'Let\'s try it'), b: L('다음에', 'Not now') }; }
+        case 'menu': { const m = menuInfo(it.menuId); return { tag: 'idea', title: L(`신메뉴 제안: ${m.n[0]}`, `New menu idea: ${m.n[1]}`), desc: L(`개발비 15,000원. 메뉴에 ${m.n[0]}이 늘어요.`, `${money(15000)} to develop. Adds ${m.n[1]} to the menu.`), a: L('해 보자', 'Let\'s try it'), b: L('다음에', 'Not now') }; }
         default: return { tag: 'idea', title: it.kind, desc: '', a: 'OK', b: L('아니요', 'No') };
     }
 }
@@ -700,7 +707,7 @@ export function decideInbox(id, yes) {
     let note = '';
     const s = it.staffId ? staffById(it.staffId) : null;
     switch (it.kind) {
-        case 'loan': if (yes) { g.loan += 50000; g.money += 50000; note = L('5만 원을 빌렸어요', 'Borrowed ₩50,000'); } break;
+        case 'loan': if (yes) { g.loan += 50000; g.money += 50000; note = L('5만 원을 빌렸어요', `Borrowed ${money(50000)}`); } break;
         case 'repay': if (yes) { g.money -= g.loan; note = L('대출을 다 갚았어요', 'Loan repaid'); g.loan = 0; } break;
         case 'wagecut': if (yes) { g.wageRate = .7; for (const x of g.staff) addRel('boss', x.id, -25, L('월급이 깎임', 'Had their pay cut')); note = L('월급을 깎았어요', 'Wages cut'); } break;
         case 'quit':
@@ -742,6 +749,7 @@ export function fireStaff(id, quit = false) {
 export function autoDay(g) {
     g.day += 1;
     g.pendingFollow = []; // 어제 못 터진 "이어지는 일"은 사장님 없는 날엔 그냥 지나감
+    rulesDayStart(g);
     g.weather = rollWeather();
     g.effects = g.effects.filter(e => e.until >= g.day);
     const w = g.staff.filter(s => !s.restNext);
@@ -763,13 +771,14 @@ export function autoDay(g) {
         s.fatigue = clamp((s.fatigue ?? 30) * .7 + 10, 0, 100);
         s.mood = clamp((s.mood ?? 60) + (60 - (s.mood ?? 60)) * .3, 0, 100);
     }
-    const picks = pickEvents(g, 'auto');
+    const picks = filterAutoPicks(g, pickEvents(g, 'auto'));
     // 밤도둑 (피해 작게)
     const careless = g.staff.find(s => hasTag(s.id, 'clumsy', 'lazy'));
     if (careless && chance(.1)) picks.push({ id: uid('ev'), kind: 'nightThief', staffIds: [careless.id] });
     applyAutoPicks(g, picks);
+    const hr = rulesDayEnd(g, null, true);
     g.stats.autoDays += 1;
-    return { day: g.day, weather: g.weather, money: g.money - before, rep: 0, picks, guests: sell, sales: revenue, leak: autoLeak(picks, avg) };
+    return { day: g.day, weather: g.weather, money: g.money - before, rep: 0, picks, guests: sell, sales: revenue, leak: autoLeak(picks, avg), hr };
 }
 
 /** 자리 비운 동안 새는 돈: 사건으로 잃은 돈 + 몰래 먹은 디저트 */
@@ -841,7 +850,8 @@ export function storeAway(days, texts, prev = null) {
     addLogChunk(g, {
         kind: 'away', days: dayList, short: short ? days[0].minutes || 0 : 0,
         stats: short ? { leak: sum('leak') } : { guests: sum('guests'), sales: sum('sales'), leak: sum('leak') },
-        items: events.map(e => ({ t: e.time || '', k: 'work', text: e.title + (e.text ? ' — ' + e.text : ''), sid: e.staffId || null })),
+        items: [...events.map(e => ({ t: e.time || '', k: 'work', text: e.title + (e.text ? ' — ' + e.text : ''), sid: e.staffId || null })),
+            ...days.flatMap(d => (d.hr || []).map(x => ({ t: '', k: x.k, text: x.text, chip: x.chip, good: !!x.good, sid: x.sid || null, boss: !!x.boss, cc: x.cc || '' })))],
     });
     save();
 }
@@ -876,7 +886,7 @@ export function applyNotices(g) {
     for (const n of g.notices) {
         if (n.kind === 'thief') {
             g.money -= n.money; g.ing = Math.max(0, g.ing - n.ing);
-            out.push({ ...n, text: L(`밤사이 도둑이 들었어요! 돈 ${n.money.toLocaleString()}원, 재료 ${n.ing}개를 잃었어요. (${book(n.staffId)?.name}가 문단속을 깜빡했대요)`, `A burglar broke in overnight! Lost ₩${n.money.toLocaleString()} and ${n.ing} stock. (${book(n.staffId)?.name} forgot to lock up)`) });
+            out.push({ ...n, text: L(`밤사이 도둑이 들었어요! 돈 ${n.money.toLocaleString()}원, 재료 ${n.ing}개를 잃었어요. (${book(n.staffId)?.name}가 문단속을 깜빡했대요)`, `A burglar broke in overnight! Lost ${money(n.money)} and ${n.ing} stock. (${book(n.staffId)?.name} forgot to lock up)`) });
             remember(n.staffId, L('문단속을 깜빡해서 도둑이 듦', 'Forgot to lock up — burglary'));
             addRel('boss', n.staffId, -3);
         }

@@ -513,3 +513,50 @@ button.cr-ent { cursor: pointer; }
 /* 영업 중 머리: 평소 머리 맨 아래 얇은 시간 막대 */
 .cr-headTime { flex: 1; min-width: 24px; width: auto; height: 6px; }
 .cr-pause.sm { margin-left: 0; width: 30px; height: 30px; flex: none; }
+
+/* 0.3.0 가게 대책 */
+.cr-hrChip { display: flex; align-items: center; gap: 6px; width: 100%; min-height: 44px; margin: 8px 0 2px; padding: 8px 12px; border-radius: 14px; border: 1.5px solid #E8B98F; background: #FFF4E6; font-size: 13px; font-weight: 800; color: #7A4A1E; text-align: left; cursor: pointer; }
+.cr-hrChip span { margin-left: auto; color: #A07850; }
+.cr-hrNow { margin: 6px 0 0; }
+.cr-hrSeg { margin-top: 8px; flex-wrap: wrap; }
+.cr-hrNote { margin: 6px 0 0; }
+.cr-hrFull { margin: 8px 0 0; padding: 7px 10px; border-radius: 10px; background: #FFF2EC; border: 1.5px solid #F2C4B3; color: #93402A; font-size: 12.5px; }
+.cr-hrOpt { display: block; width: 100%; margin-top: 8px; text-align: left; padding: 9px 12px; border-radius: 14px; background: var(--cr-cream); border: 1.5px solid #EAD3B8; font-size: 14px; color: inherit; cursor: pointer; box-sizing: border-box; }
+.cr-hrOpt:hover, .cr-hrOpt:focus-visible { border-color: var(--cr-coral); }
+.cr-hrOpt.warn { background: #fff; }
+.cr-hrOpt.picked { background: #fff; cursor: default; }
+.cr-hrOpt:disabled { opacity: .5; cursor: default; }
+.cr-hrOpt .cr-tag { margin-left: 6px; font-size: 11px; }
+.cr-hrMeta { float: right; font-size: 11.5px; color: #8A6A4A; font-weight: 700; margin-top: 2px; }
+.cr-hrExp { display: block; clear: both; margin-top: 6px; border: 1.5px dashed #DCC3A6; border-radius: 10px; padding: 5px 8px; font-size: 12px; color: #7A6048; background: #fff; }
+.cr-hrExp i { font-style: normal; font-weight: 800; color: #A07850; margin-right: 4px; }
+.cr-hrReact { gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+.cr-hrDone { margin-top: 10px; padding: 9px 12px; border-radius: 14px; background: #FFF4E6; border: 1.5px solid #E8B98F; font-size: 13px; font-weight: 800; color: #6B3F18; text-align: center; }
+.cr-hrDone small { display: block; font-weight: 600; color: #8A6A4A; margin-top: 2px; }
+.cr-hrCount { margin-left: 6px; }
+.cr-hrRule { border-top: 1px dashed var(--cr-line); padding: 9px 0; }
+.cr-hrHead { display: flex; align-items: center; gap: 7px; font-size: 13px; flex-wrap: wrap; }
+.cr-hrHead .cr-face { flex: none; }
+.cr-hrHead .cr-hrLbl { margin-left: auto; }
+.cr-hrLbl { display: inline-block; font-size: 11.5px; font-weight: 800; padding: 1px 8px; border-radius: 999px; border: 1.3px solid; white-space: nowrap; }
+.cr-hrLbl.half, .cr-chip.hr-half { background: #FFF4C9; border-color: #EBCF6C; color: #6E5410; }
+.cr-hrLbl.back, .cr-chip.hr-back { background: #FFE4E4; border-color: #F2B1B1; color: #8E2F3A; }
+.cr-hrLbl.unexp, .cr-chip.hr-unexp { background: #EFE8FB; border-color: #CFC0EE; color: #4E3A8A; }
+.cr-hrLbl.lucky, .cr-chip.hr-lucky { background: #E9F6E7; border-color: #BFE0BE; color: #2E6B33; }
+.cr-hrLbl.ok, .cr-chip.hr-ok { background: #fff; border-color: #E3CDB3; color: #6B4A2E; }
+.cr-hrLbl.watch { background: #F1EEEA; border-color: #DDD5CC; color: #5A5048; }
+.cr-hrDays { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: #8A6A4A; margin: 5px 0 0 37px; }
+.cr-hrDays .cr-bar { width: 70px; }
+.cr-hrLn { font-size: 12px; margin: 4px 0 0 37px; line-height: 1.4; color: #7A6048; }
+.cr-hrLn.real { color: var(--cr-brown); }
+.cr-hrLn i { font-style: normal; font-weight: 800; margin-right: 5px; color: #A07850; }
+.cr-hrBtns { display: flex; flex-wrap: wrap; gap: 6px; margin: 7px 0 0 37px; }
+.cr-hrBtns button { min-height: 32px; font-size: 12px; padding: 5px 11px; border-radius: 999px; border: 1.5px solid #EAD3B8; background: #fff; font-weight: 700; color: inherit; cursor: pointer; }
+.cr-hrBtns button.main { background: var(--cr-coral); border-color: var(--cr-coral); color: #fff; }
+.cr-hrEmpty { border: 2px dashed var(--cr-line2); border-radius: 14px; padding: 8px 10px; display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: #9A7A5A; }
+.cr-hrEmpty .cr-face { flex: none; }
+.cr-hrEmpty b { color: var(--cr-brown); }
+.cr-hrEmpty button { margin-left: auto; flex: none; min-height: 34px; font-size: 12px; padding: 5px 11px; border-radius: 999px; background: var(--cr-coral); border: none; color: #fff; font-weight: 800; cursor: pointer; }
+.cr-hrMore { padding: 0 0 6px 37px; }
+.cr-hrWarn { font-size: 12px; color: #7A6048; margin: 2px 0 6px; padding: 6px 8px; border-radius: 10px; background: #FFF6EA; }
+.cr-hrSeg button.on { background: #FDE3D8; border-color: #F2B8A0; color: var(--cr-brown); }

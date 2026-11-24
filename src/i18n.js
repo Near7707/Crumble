@@ -26,12 +26,15 @@ export function F(tpl, vars = {}) {
     return String(tpl).replace(/\{(\w+)\}/g, (_, k) => (vars[k] ?? ''));
 }
 
-/** 돈 표시: 한국어는 "원", 영어는 숫자 + "won" 대신 ₩ */
+/** 돈 표시: 한국어는 "원", 영어는 1,000원 = $1 로 바꿔서 (0.3.0, 게임 안 숫자는 그대로) */
 export function money(n, withUnit = true) {
     const neg = Math.round(n) < 0;
-    const v = Math.abs(Math.round(n)).toLocaleString(isKo() ? 'ko-KR' : 'en-US');
+    const a = Math.abs(Math.round(n));
+    let v;
+    if (isKo()) v = a.toLocaleString('ko-KR');
+    else { const d = a / 1000; v = d.toLocaleString('en-US', { minimumFractionDigits: Number.isInteger(d) ? 0 : 2, maximumFractionDigits: 2 }); }
     if (!withUnit) return (neg ? '−' : '') + v;
-    return (neg ? '−' : '') + (isKo() ? v + '원' : '₩' + v);
+    return (neg ? '−' : '') + (isKo() ? v + '원' : '$' + v);
 }
 export function signedMoney(n) {
     const s = n > 0 ? '+' : n < 0 ? '−' : '';

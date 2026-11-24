@@ -105,9 +105,8 @@ export const ACC = {
  * 반응 고르기 (규칙): 성격 태그 + 기분 + 피로 + 사장 친밀도 + 지시 종류.
  * 실제 대사는 직원 말투(AI), 고르는 건 숫자로.
  */
-export function pickReaction(staffId, kind, orderIdx) {
+export function pickReaction(staffId, kind, orderIdx, o = ACC[kind].orders[orderIdx]) {
     const s = staffById(staffId) || {};
-    const o = ACC[kind].orders[orderIdx];
     const w = { obey: 40, delay: 22, refuse: 15, twist: 20 };
     const rb = bossRel(staffId), mood = s.mood ?? 60, fat = s.fatigue ?? 30;
     if (rb >= 40) { w.obey += 25; w.refuse -= 10; } else if (rb >= 15) w.obey += 10;

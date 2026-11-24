@@ -3,7 +3,7 @@
 import { ctx, parseJsonLoose, str, num } from './util.js';
 import { S, G, book, staffById, rel, menuInfo, shopName } from './state.js';
 import { EVENT_KINDS, TAGS, isImportantKind, WEATHER, roleLabel } from './rules.js';
-import { AI_LANG, isKo, L } from './i18n.js';
+import { AI_LANG, isKo, L, money } from './i18n.js';
 
 // 설정의 "사장 이름" → 없으면 페르소나 이름 → 없으면 "사장님"
 const bossName = () => String(S().bossName || '').trim() || ctx().name1 || (isKo() ? '사장님' : 'Boss');
@@ -248,7 +248,7 @@ export async function morningPrep(g, events, linesToo = true) {
     const withCard = id => ref === 'all' ? evIds.has(id) : ref === 'important' ? events.some(e => e.staffIds.includes(id) && isImportantKind(e.kind)) : false;
     const km = keyMap(ids);
     const k = id => Object.entries(km).find(([, v]) => v === id)?.[0];
-    const menu = g.menu.map(m => `${menuInfo(m.id).n[isKo() ? 0 : 1]} ${m.p}`).join(', ');
+    const menu = g.menu.map(m => `${menuInfo(m.id).n[isKo() ? 0 : 1]} ${money(m.p)}`).join(', ');
     const evDesc = events.map((e, i) => {
         const kd = EVENT_KINDS[e.kind];
         return `E${i + 1}: type="${kd.label[1]}" (${kd.cat}), involved=${e.staffIds.map(k).join('+')}

@@ -106,6 +106,8 @@ export function newGame(carryRelations = null) {
         shopLog: [], // 가게 로그 덩어리 {kind:'present'|'away', items:[]}
         recentEv: [], // 최근 나온 사건 {kind,day} — 같은 사건이 계속 나오지 않게
         notices: [], // 다음 날 아침 알림 (밤도둑 등)
+        rules: [], // 0.3.0 가게 대책 (houserules.js)
+        accSeen: {}, // 0.3.0 직원별 최근 성격 사고 {sid: {kind: day}}
         stats: { bestDay: null, maxRep: 40, directDays: 0, autoDays: 0, memorable: [] },
         today: null,
         zoom: {},
@@ -122,6 +124,7 @@ export function ensureGame() {
 }
 
 function migrate(g) {
+    g.rules ??= []; g.accSeen ??= {};
     g.effects ??= []; g.pending ??= []; g.notices ??= []; g.inbox ??= []; g.inboxHistory ??= [];
     g.memory ??= {}; g.rel ??= {}; g.journal ??= []; g.zoom ??= {};
     g.stats ??= { bestDay: null, maxRep: g.rep, directDays: 0, autoDays: 0, memorable: [] };

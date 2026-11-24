@@ -13,6 +13,8 @@ import { createScene } from './scene.js';
 import { faceChip } from './looks.js';
 import { line, tapLine } from './lines.js';
 import { morningPrep, closingDiary } from './ai.js';
+import { ruleMul, ruleSlow, noteAcc, ruleFor, ruleName, activeRules, revealRule } from './houserules.js';
+import { openRuleSheet } from './hrui.js';
 import { render, addScene, openSheet, closeSheet, toast, confirmBox, logoHtml, headHtml, closeBtn, gearBtn, bizTabs, heartRow, bar, nameTag, closeWindow, inner } from './ui.js';
 
 let B = null; // 지금 돌아가는 영업
@@ -295,7 +297,7 @@ function openScreen(box) {
         await sc.go(e, p);
         if (hasTag(s.id, 'clumsy') && chance(.06) && e.r >= L0.frontRow) addStain(e.c, e.r);
     };
-    const fat = s => ((s.fatigue ?? 30) > 75 ? 1.3 : 1);
+    const fat = s => ((s.fatigue ?? 30) > 75 ? 1.3 : 1) * ruleSlow(g, s.id); // 0.3.0 대책 중엔 조금 느려질 수 있음
 
     const tasks = {
         async bake(s) {
@@ -323,7 +325,7 @@ function openScreen(box) {
             B.shelf += batch; sc.display(B.shelf); chips();
             const pSneak = (hasTag(s.id, 'glutton') ? .25 : hasTag(s.id, 'lazy') ? .08 : .03) * mod(s, 'sneak');
             if (B.shelf > 0 && chance(pSneak)) {
-                B.shelf--; biz.eaten++; sc.display(B.shelf); sc.emo(e, 'cake'); sc.say(e, line(s.id, 'sneak'), 2400);
+                B.shelf--; biz.eaten++; noteAcc(g, biz, s.id, 'sneak'); sc.display(B.shelf); sc.emo(e, 'cake'); sc.say(e, line(s.id, 'sneak'), 2400);
                 setDoing(s, L('진열대 · 몰래 먹는 중', 'Display · sneaking a bite'), 'bad', L('몰래 먹는 중', 'Sneaking a bite'));
                 sc.float(e, L('재료 −1', 'Stock −1'), 'bad'); news(F(L('{n} 진열대 디저트를 몰래 먹었어요', '{n} snuck a dessert off the display'), { n: nmGa(s.id) }), 'bad', L('재료 −1', 'Stock −1'), false, 'sneak' + s.id, s.id);
                 const a = await accident(s, 'sneak');
@@ -352,7 +354,7 @@ function openScreen(box) {
                 const freebie = (hasTag(s.id, 'kind', 'flatterer', 'chatty') ? .14 : .03) * mod(s, 'freebie');
                 // 덤·인사도 그 직원 말투로 (말투 대사가 없으면 아이콘만)
                 if (B.shelf > 0 && chance(freebie)) {
-                    B.shelf--; biz.freebie = (biz.freebie || 0) + 1; sc.display(B.shelf); sc.emo(e, 'note'); sc.say(e, line(s.id, 'freebie'), 1600); setTimeout(() => { if (e.icon === 'note') sc.emo(e, null); }, 1800);
+                    B.shelf--; biz.freebie = (biz.freebie || 0) + 1; noteAcc(g, biz, s.id, 'freebie'); sc.display(B.shelf); sc.emo(e, 'note'); sc.say(e, line(s.id, 'freebie'), 1600); setTimeout(() => { if (e.icon === 'note') sc.emo(e, null); }, 1800);
                     sc.float(e, L('재료 −1', 'Stock −1'), 'bad', 16); news(F(L('{n} 손님에게 몰래 덤을 줬어요', '{n} slipped a guest a freebie'), { n: nmGa(s.id) }), 'focus', L('재료 −1', 'Stock −1'), false, 'free' + s.id, s.id);
                     gaveFree = true;
                 }
@@ -377,6 +379,7 @@ function openScreen(box) {
             const seat = pick(seated), e = E(s);
             const leftCounter = (s.role === 'serve' || s.role === 'all');
             setDoing(s, L('테이블 · 손님이랑 수다', 'Table · chatting'), leftCounter ? 'bad' : 'work', leftCounter ? L('수다 중 · 계산대 빔', 'Chatting · counter empty') : L('수다 중', 'Chatting'));
+            if (leftCounter) noteAcc(g, biz, s.id, 'chat');
             if (leftCounter) news(F(L('{n} 손님이랑 수다 떠느라 계산대가 비었어요', '{n} is chatting; the counter is empty'), { n: nmGa(s.id) }), 'bad', '', false, 'chat' + s.id, s.id);
             sc.emo(e, 'note');
             await walk(s, seat.chat);
@@ -412,7 +415,7 @@ function openScreen(box) {
             const tired = (s.fatigue ?? 30) > 70 || (t.crowd && chance(.3));
             if (!(tired || hasTag(s.id, 'lazy')) || !chance(.18 * mod(s, 'doze'))) return false;
             const e = E(s);
-            setDoing(s, L('구석 · 꾸벅꾸벅', 'Corner · dozing'), 'sleep', L('조는 중', 'Dozing'));
+            setDoing(s, L('구석 · 꾸벅꾸벅', 'Corner · dozing'), 'sleep', L('조는 중', 'Dozing')); noteAcc(g, biz, s.id, 'doze');
             news(F(L('{n} 구석에서 꾸벅꾸벅 졸아요', '{n} is dozing in the corner'), { n: nmGa(s.id) }), 'sleep', '', false, 'doze' + s.id, s.id);
             sc.emo(e, 'zzz'); if (chance(.5)) sc.say(e, line(s.id, 'tired'), 1600);
             const a = await accident(s, 'doze');
@@ -650,7 +653,7 @@ ${B.backlog.map(x => `<div class="cr-whoRow">${faceChip(x.staffIds[0], 28)}<span
     biz.mods = biz.mods || {};
     biz.follows = biz.follows || [];
     biz.accN = biz.accN || 0;
-    const mod = (s, k) => biz.mods[s.id]?.[k] ?? 1;
+    const mod = (s, k) => (biz.mods[s.id]?.[k] ?? 1) * ruleMul(g, s.id, k, { busy: !!t.crowd }); // 지시(그날) × 대책(며칠)
     const setMod = (s, k, v) => { (biz.mods[s.id] ??= {})[k] = v; };
     const homeOf = s => (s.role === 'bake' ? L0.spots.oven : s.role === 'serve' || s.role === 'all' ? L0.spots.counter : L0.idle[0]);
     const goalPos = (s, goal) => ({ oven: L0.spots.oven, counter: L0.spots.counter, display: L0.spots.display, tables: (L0.seats.find(x => x.g) || L0.seats[0])?.chat, home: homeOf(s) })[goal] || null;
@@ -697,6 +700,28 @@ ${B.backlog.map(x => `<div class="cr-whoRow">${faceChip(x.staffIds[0], 28)}<span
         await runReaction(s, A);
         return true;
     };
+    // 0.3.0 같은 사고가 오늘 2번째면 [대책 걸기] / 이미 대책이 걸려 있으면 한 줄 안내
+    const ruleChip = (sid, kind) => {
+        const r = ruleFor(g, sid, kind);
+        if (r) return `<p class="cr-muted cr-hrNow">📌 ${F(L('대책 중: {r}', 'House rule on: {r}'), { r: ruleName(r) })}</p>`;
+        const n = biz.accTimes?.[sid]?.[kind] || 0;
+        if (n < 2) return '';
+        return `<button type="button" class="cr-hrChip" data-b="ordRule">📌 ${F(L('오늘 벌써 {n}번째예요 · 대책 걸기', '{o} time today · Set a house rule'), { n, o: n === 2 ? '2nd' : n === 3 ? '3rd' : n + 'th' })}<span aria-hidden="true">›</span></button>`;
+    };
+    const ruleFromTalk = () => {
+        const A = B.acc; if (!A?.open || A.done) return;
+        const e = B.ents[A.sid];
+        openRuleSheet(A.sid, A.kind, {
+            onSet: react => {
+                A.order = -1; A.ruled = true; A.done = true;
+                if (e) { sc.say(e, line(A.sid, REACT[react].line), 2600); sc.tag(e, L(...REACT[react].start), REACT[react].tag); }
+                news(F(L('사장님이 {n}에게 대책을 걸었어요', 'You set a house rule for {n}'), { n: nmOf(A.sid) }), 'boss', L(...REACT[react].label), false, 'hr' + B.elapsed, A.sid, { cc: REACT[react].chip });
+                save();
+            },
+            onClose: () => { closeSheet(); afterSheet(); },
+            onCancel: () => { A.open = false; openTalk(); },
+        });
+    };
     const openTalk = () => {
         const A = B.acc; if (!A || A.open || B.sheetEv || B.resultOpen) return;
         A.open = true;
@@ -705,6 +730,7 @@ ${B.backlog.map(x => `<div class="cr-whoRow">${faceChip(x.staffIds[0], 28)}<span
         openSheet(`<div class="cr-row"><span class="cr-evTag staff">${esc(L(...def.title))}</span><span class="cr-muted" style="margin-left:auto">${L('가게가 잠깐 멈춰 있어요', 'The shop is paused')}</span></div>
 <div class="cr-resWho">${faceChip(sid, 40)}<div><b>${esc(nmOf(sid))}</b> <span class="cr-muted">${esc(roleLabel(st?.role))}</span> ${heartRow(bossRel(sid))}<div class="cr-tags">${(book(sid)?.tags || []).map(t => `<span class="cr-tag">${esc(tagLabel(t))}</span>`).join('')}<span class="cr-tag gray">${esc(moodLabel(sid))}</span></div></div></div>
 <p class="cr-situ">${esc(T(def.situ, sid))}</p>
+${ruleChip(sid, A.kind)}
 <div class="cr-say2"><span class="cr-face boss" aria-hidden="true">👑</span><p>${esc(L(...def.boss))}</p></div>
 <div class="cr-say2">${faceChip(sid, 30)}<p>${esc(line(sid, def.key))}</p></div>
 <div class="cr-ttl sm" style="margin-top:10px">${F(L('{n}에게 뭐라고 할까요?', 'What do you tell {n}?'), { n: nmOf(sid) })}</div>
@@ -868,6 +894,20 @@ ${B.backlog.map(x => `<div class="cr-whoRow">${faceChip(x.staffIds[0], 28)}<span
                     B.wait += 250;
                     if (B.wait > Math.max(20000, D * .1)) finishEvent(0, 'auto', B.active);
                 }
+                // 0.3.0 대책 결과: 걸린 첫날 영업 40%쯤에 한 번
+                if (tt >= .4 && tt < .95 && !B.acc && !B.sheetEv && !B.resultOpen) {
+                    const r = activeRules(g).find(x => !x.shown && x.id !== 'warn' && B.ents[x.sid]);
+                    if (r) {
+                        const ln = revealRule(g, r, biz);
+                        if (ln) {
+                            const e = B.ents[r.sid];
+                            sc.tag(e, ln.chip, ln.good ? 'work' : r.out === 'unexp' ? 'twist' : 'bad'); sc.emo(e, ln.good ? 'note' : 'sweat');
+                            setTimeout(() => { if (e.el.isConnected) sc.emo(e, null); }, 2400);
+                            news(ln.text, ln.k, ln.chip, ln.good, 'hrr' + r.rid, r.sid, { cc: ln.cc });
+                            chips(); save();
+                        }
+                    }
+                }
                 if (!B.acc && !B.sheetEv && !B.resultOpen && tt < .97) {
                     const f = (biz.follows || []).find(x => !x.fired && B.elapsed >= x.at);
                     if (f) { f.fired = true; fireFollow(f); }
@@ -931,6 +971,7 @@ ${B.backlog.map(x => `<div class="cr-whoRow">${faceChip(x.staffIds[0], 28)}<span
     B.sheetHandler = e => {
         const b = e.target.closest('[data-b]'); if (!b || !B) return;
         if (b.dataset.b === 'resOk') { if (B.resultOpen) resultOk(); return; }
+        if (b.dataset.b === 'ordRule') { ruleFromTalk(); return; }
         if (b.dataset.b === 'ord' || b.dataset.b === 'ordSkip') { if (B.acc?.open && !B.acc.done) chooseOrder(b.dataset.b === 'ord' ? +b.dataset.i : -1); return; }
         if (!B.sheetEv || B.resultOpen) return;
         if (b.dataset.b === 'opt') finishEvent(+b.dataset.i, false);
@@ -964,6 +1005,7 @@ function closeScreen(box) {
 <div class="cr-line"><span>${L('재료', 'Stock')}</span><b>${signedMoney(-(t.spentIng || 0))}</b></div>
 <div class="cr-line"><span>${F(L('월급 ({n}명)', 'Wages ({n})'), { n: g.staff.length })}</span><b>${signedMoney(-(sum.wages || 0))}</b></div>
 ${sum.interest ? `<div class="cr-line"><span>${L('대출 이자', 'Loan interest')}</span><b>${signedMoney(-sum.interest)}</b></div>` : ''}
+${sum.ruleCost ? `<div class="cr-line"><span>${L('대책 비용', 'House rules')}</span><b>${signedMoney(-sum.ruleCost)}</b></div>` : ''}
 ${biz.eventMoney ? `<div class="cr-line"><span>${L('사건', 'Events')}</span><b>${signedMoney(biz.eventMoney)}</b></div>` : ''}
 </section>
 <div class="cr-chips">
