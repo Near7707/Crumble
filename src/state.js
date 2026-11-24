@@ -49,6 +49,9 @@ const DEFAULT_SETTINGS = {
     profileId: '', // '' = 지금 연결 그대로
     bossName: '', // '' = 페르소나 이름
     bossNameAsked: false, // 처음 열 때 사장 이름을 물어봤는지
+    bossPhoto: 'persona', // 0.3.1 사장 사진: persona(페르소나 사진) | upload(올린 사진) | none
+    bossImg: '', // 올린 사진 (작게 줄인 jpg, 확장 설정에만 저장)
+    bossFace: null, // 사장 사진 위치 {z, x, y}
     winSize: 'auto', // auto | s | m | l
     awayMinutes: 30, // 창을 닫고 이만큼 지나면 "사장님 없을 때" 일지가 쌓임 (0 = 끔)
     backlogMinutes: 60, // 영업 중 창을 닫고 이만큼 지나면 밀린 일이 쌓임 (0 = 끔)

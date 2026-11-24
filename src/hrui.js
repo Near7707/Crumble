@@ -4,9 +4,9 @@ import { L, F, money } from './i18n.js';
 import { G, save, book, staffById, bossRel } from './state.js';
 import { tagLabel, roleLabel } from './rules.js';
 import { REACT, moodLabel } from './orders.js';
-import { faceChip } from './looks.js';
+import { faceChip, bossFace } from './looks.js';
 import { line } from './lines.js';
-import { heartRow, openSheet, closeSheet, toast } from './ui.js';
+import { heartRow, openSheet, closeSheet, toast, redrawShopLog } from './ui.js';
 import {
     HR, HR_ACC, MAX_RULES, rulesOf, slotsUsed, ruleFor, warnFor, ruleName, proneAccs, setRule, startText,
     outcomeOf, fading, daysLeft, removeRule, ackRule, extendRule, reactLabel,
@@ -55,7 +55,7 @@ function doneHtml() {
     const meta = [len(d), costTxt(d)].filter(Boolean).join(' · ');
     return `${head(g)}${whoHtml(sid)}
 <div class="cr-hrOpt picked">${d.icon} <b>${esc(L(...d.n))}</b><span class="cr-hrMeta">${esc(meta)}</span></div>
-<div class="cr-say2"><span class="cr-face boss" aria-hidden="true">👑</span><p>${esc(L(...d.boss))}</p></div>
+<div class="cr-say2">${bossFace(30)}<p>${esc(L(...d.boss))}</p></div>
 <div class="cr-say2">${faceChip(sid, 30)}<p>${esc(line(sid, R.line) || L(...R.start))}</p></div>
 <div class="cr-row cr-hrReact"><span class="cr-chip ${R.chip}">${esc(L(...reactLabel(res.react)))}</span><span class="cr-muted">${esc(startText(g, r))}</span></div>
 <div class="cr-hrDone">${d.noSlot ? L('경고했어요', 'Warning given') : F(L('대책을 걸었어요 · {n}/{m}', 'House rule set · {n}/{m}'), { n: slotsUsed(g), m: MAX_RULES })}<small>${d.noSlot ? L('오늘 하루만 가요 · 자리는 안 차지해요', 'Lasts one day · takes no slot') : L('어떻게 될지는 영업해 봐야 알아요', 'You\'ll see how it goes once the shop runs')}</small></div>
@@ -84,7 +84,7 @@ export function redrawRules() {
 function finishSheet() {
     const c = cur; cur = null;
     if (c?.onClose) c.onClose(); else closeSheet();
-    redrawRules();
+    redrawRules(); redrawShopLog();
 }
 /** 같은 대책 다시 걸기 (결과·반응 새로) */
 function setAndShow(sid, acc, id) {

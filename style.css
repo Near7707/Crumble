@@ -560,3 +560,19 @@ button.cr-ent { cursor: pointer; }
 .cr-hrMore { padding: 0 0 6px 37px; }
 .cr-hrWarn { font-size: 12px; color: #7A6048; margin: 2px 0 6px; padding: 6px 8px; border-radius: 10px; background: #FFF6EA; }
 .cr-hrSeg button.on { background: #FDE3D8; border-color: #F2B8A0; color: var(--cr-brown); }
+
+/* 0.3.1 사장 사진 */
+.cr-face.boss.photo { position: relative; font-size: 0; overflow: visible; }
+.cr-face.boss.photo::after { content: '👑'; position: absolute; right: -5px; top: -7px; font-size: 10px; line-height: 1; }
+.cr-bossSay { display: flex; align-items: center; gap: 6px; }
+.cr-bossPhoto { display: flex; align-items: flex-start; gap: 10px; margin: 6px 0 4px; }
+.cr-bossPhoto > .cr-face { margin-top: 4px; }
+.cr-bpBtns { display: flex; flex-wrap: wrap; gap: 6px; }
+.cr-bpBtns button.cr-bp { font-size: 12px; min-height: 32px; padding: 5px 11px; border-radius: 999px; border: 1.5px solid #EAD3B8; background: #fff; font-weight: 700; color: #5A3A22; cursor: pointer; }
+.cr-bpBtns button.cr-bp.on { background: #FDE3D8; border-color: #F2B8A0; }
+.cr-bpBtns button.cr-bp:disabled { opacity: .45; cursor: default; }
+.cr-bpNote { display: block; margin-top: 4px; font-size: 11.5px; color: #8A6A4A; }
+.cr-bpEdit { margin-top: 6px; }
+.cr-bpEdit label { display: flex; align-items: center; gap: 8px; font-size: 12px; margin-top: 4px; }
+.cr-bpEdit input[type=range] { flex: 1; }
+.cr-bpEdit input[type=range] { accent-color: var(--cr-coral); }

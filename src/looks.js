@@ -1,6 +1,34 @@
 // 직원·손님 모습 — 한 곳에 모아 둠 (4단계에서 "전용 미니 그림" 방식으로 바꿔 끼울 자리)
 import { esc, avatarUrl } from './util.js';
-import { book, colorOf, staffById } from './state.js';
+import { book, colorOf, staffById, S } from './state.js';
+
+// ---------- 0.3.1 사장 사진 ----------
+// 페르소나 사진: 실리태번 personas.js 의 user_avatar (못 읽으면 페르소나 관리 화면에서 고른 것)
+let personas = null;
+import('../../../../personas.js').then(m => { personas = m; }).catch(() => { /* 다른 위치에 설치됐으면 화면에서 읽음 */ });
+export function personaAvatarFile() {
+    try { if (personas?.user_avatar) return String(personas.user_avatar); } catch { /* */ }
+    return document.querySelector('#user_avatar_block .avatar-container.selected')?.getAttribute('imgfile') || '';
+}
+/** 사장 사진 주소 ('' = 없음 → 👑) */
+export function bossUrl() {
+    const s = S();
+    if (s.bossPhoto === 'none') return '';
+    if (s.bossPhoto === 'upload') return s.bossImg || '';
+    const f = personaAvatarFile();
+    return f ? 'User Avatars/' + encodeURIComponent(f) : '';
+}
+export const BOSS_FACE0 = { z: 1, x: 50, y: 40 };
+export function bossFaceStyle(url = bossUrl()) {
+    const f = S().bossFace || BOSS_FACE0;
+    return `background-color:#E6DCF2;background-image:url('${url.replace(/'/g, '%27')}');background-size:${Math.round(100 * f.z)}% auto;background-position:${f.x}% ${f.y}%`;
+}
+/** 사장 얼굴 동그라미 (사진이 없으면 👑) */
+export function bossFace(size = 28) {
+    const url = bossUrl();
+    if (!url) return `<span class="cr-face boss" aria-hidden="true">👑</span>`;
+    return `<span class="cr-face boss photo" style="width:${size}px;height:${size}px;${bossFaceStyle(url)}" aria-hidden="true"></span>`;
+}
 
 export const ICON = {
     heart: '<svg width="12" height="12" viewBox="0 0 20 20"><path d="M10 17s-6.5-4-6.5-8.5A3.5 3.5 0 0110 6.4a3.5 3.5 0 016.5 2.1C16.5 13 10 17 10 17z" fill="#F28CA6"/></svg>',

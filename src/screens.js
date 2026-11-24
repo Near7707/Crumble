@@ -10,7 +10,7 @@ import {
 } from './rules.js';
 import { ACC, REACT, FOLLOW, FOLLOW_OF, pickReaction, followChance, MAX_ACC_PER_DAY, MAX_FOLLOW_PER_DAY, accText, moodLabel } from './orders.js';
 import { createScene } from './scene.js';
-import { faceChip } from './looks.js';
+import { faceChip, bossFace } from './looks.js';
 import { line, tapLine } from './lines.js';
 import { morningPrep, closingDiary } from './ai.js';
 import { ruleMul, ruleSlow, noteAcc, ruleFor, ruleName, activeRules, revealRule } from './houserules.js';
@@ -731,7 +731,7 @@ ${B.backlog.map(x => `<div class="cr-whoRow">${faceChip(x.staffIds[0], 28)}<span
 <div class="cr-resWho">${faceChip(sid, 40)}<div><b>${esc(nmOf(sid))}</b> <span class="cr-muted">${esc(roleLabel(st?.role))}</span> ${heartRow(bossRel(sid))}<div class="cr-tags">${(book(sid)?.tags || []).map(t => `<span class="cr-tag">${esc(tagLabel(t))}</span>`).join('')}<span class="cr-tag gray">${esc(moodLabel(sid))}</span></div></div></div>
 <p class="cr-situ">${esc(T(def.situ, sid))}</p>
 ${ruleChip(sid, A.kind)}
-<div class="cr-say2"><span class="cr-face boss" aria-hidden="true">👑</span><p>${esc(L(...def.boss))}</p></div>
+<div class="cr-say2">${bossFace(30)}<p>${esc(L(...def.boss))}</p></div>
 <div class="cr-say2">${faceChip(sid, 30)}<p>${esc(line(sid, def.key))}</p></div>
 <div class="cr-ttl sm" style="margin-top:10px">${F(L('{n}에게 뭐라고 할까요?', 'What do you tell {n}?'), { n: nmOf(sid) })}</div>
 <div class="cr-ordGrid">${def.orders.map((o, i) => `<button type="button" class="cr-opt cr-ord" data-b="ord" data-i="${i}">${esc(L(...o.label))}</button>`).join('')}</div>

@@ -4,6 +4,7 @@ import { esc, ctx } from './util.js';
 import { S, save, ensureGame, shopName } from './state.js';
 import { L, resetLang } from './i18n.js';
 import { getProfiles } from './ai.js';
+import { bossFace, bossUrl, personaAvatarFile, bossFaceStyle, BOSS_FACE0 } from './looks.js';
 
 const listeners = [];
 /** fn(key, scope) — scope: 'panel' | 'game' (어디서 바꿨는지) */
@@ -65,6 +66,8 @@ export function fieldsHtml(scope) {
     return group(L('🏪 가게', '🏪 Shop')) +
         lab('boss', L('사장 이름', 'Owner name')) +
         `<input id="${id('boss')}" data-s="bossName" class="${sel}" type="text" maxlength="30" value="${esc(s.bossName || '')}" placeholder="${esc(L('비우면 페르소나 이름', 'Blank = persona name'))}">` +
+        lab('bossPhoto', L('사장 사진', 'Owner photo')) +
+        `<div class="cr-bossPhoto" data-bossphoto>${bossPhotoInner(game)}</div>` +
         lab('shop', L('가게 이름', 'Shop name')) +
         `<input id="${id('shop')}" data-s="shopName" class="${sel}" type="text" maxlength="24" value="${esc(shopName(s.game))}" placeholder="${esc(L('예: 말랑 제과점', 'e.g. Little Crumb Bakery'))}">` +
         group(L('🖼 화면', '🖼 Display')) +
@@ -100,12 +103,75 @@ export function fieldsHtml(scope) {
         note(L('영업 중에 창을 닫고 이만큼 지날 때마다 밀린 일이 하나씩 (최대 3개). 가게 시간은 그대로예요.', 'Each time this passes with the window closed during business, one task piles up (max 3). Shop time stays put.'));
 }
 
+// ---------- 0.3.1 사장 사진 ----------
+let bpEditOpen = false;
+function bossPhotoInner(game) {
+    const s = S(), src = s.bossPhoto || 'persona';
+    const has = !!bossUrl();
+    const btn = (k, t, on = false, dis = false) => `<button type="button" class="cr-bp${game ? '' : ' menu_button'}${on ? ' on' : ''}" data-bp="${k}" ${dis ? 'disabled' : ''}>${t}</button>`;
+    const note = src === 'none' ? L('사진 없음 · 👑로 보여요', 'No photo · shows 👑')
+        : src === 'upload' ? (s.bossImg ? L('올린 사진 · 확장 설정에만 저장돼요', 'Uploaded photo · saved only in the extension settings') : L('올린 사진이 없어요 · 👑로 보여요', 'No uploaded photo · shows 👑'))
+            : personaAvatarFile() ? L('지금: 페르소나 사진 · 페르소나를 바꾸면 따라가요', 'Now: persona avatar · follows your persona') : L('페르소나 사진을 못 찾았어요 · 👑로 보여요', 'Couldn\'t find a persona avatar · shows 👑');
+    const f = s.bossFace || BOSS_FACE0;
+    const edit = bpEditOpen && has ? `<div class="cr-bpEdit">
+<label>${L('확대', 'Zoom')}<input type="range" min="100" max="300" step="5" data-bpk="z" value="${Math.round(f.z * 100)}"></label>
+<label>${L('좌우', 'Left/right')}<input type="range" min="0" max="100" data-bpk="x" value="${f.x}"></label>
+<label>${L('위아래', 'Up/down')}<input type="range" min="0" max="100" data-bpk="y" value="${f.y}"></label></div>` : '';
+    return `${bossFace(54)}<div style="flex:1;min-width:0"><div class="cr-bpBtns">${btn('persona', L('페르소나 사진', 'Persona avatar'), src === 'persona')}${btn('upload', L('사진 올리기', 'Upload photo'), src === 'upload' && !!s.bossImg)}${btn('adjust', L('위치 맞추기', 'Adjust'), bpEditOpen && has, !has)}${btn('none', L('지우기', 'Remove'), src === 'none')}</div>
+<small class="cr-bpNote">${note}</small>${edit}</div><input type="file" accept="image/*" data-bpfile hidden>`;
+}
+/** 올린 사진을 작게 줄여서 (긴 쪽 256px, jpg) */
+function shrinkImage(file) {
+    return new Promise((res, rej) => {
+        const url = URL.createObjectURL(file), img = new Image();
+        img.onload = () => {
+            const k = Math.min(1, 256 / Math.max(img.width, img.height));
+            const c = document.createElement('canvas'); c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+            const x = c.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, c.width, c.height); x.drawImage(img, 0, 0, c.width, c.height);
+            URL.revokeObjectURL(url); res(c.toDataURL('image/jpeg', .85));
+        };
+        img.onerror = () => { URL.revokeObjectURL(url); rej(new Error('image')); };
+        img.src = url;
+    });
+}
+function bindBossPhoto(box, scope) {
+    const host = box.querySelector('[data-bossphoto]'); if (!host) return;
+    const game = scope === 'game', s = S();
+    const redraw = () => { host.innerHTML = bossPhotoInner(game); };
+    const changed = () => { save(); redraw(); emitSettings('bossPhoto', scope); };
+    host.addEventListener('click', e => {
+        const b = e.target.closest('[data-bp]'); if (!b || b.disabled) return;
+        e.preventDefault();
+        const k = b.dataset.bp;
+        if (k === 'persona') { s.bossPhoto = 'persona'; s.bossFace = null; changed(); }
+        else if (k === 'none') { s.bossPhoto = 'none'; bpEditOpen = false; changed(); }
+        else if (k === 'upload') host.querySelector('[data-bpfile]')?.click();
+        else if (k === 'adjust') { bpEditOpen = !bpEditOpen; redraw(); }
+    });
+    host.addEventListener('change', async e => {
+        if (!e.target.matches('[data-bpfile]')) return;
+        const file = e.target.files?.[0]; if (!file) return;
+        try { s.bossImg = await shrinkImage(file); s.bossPhoto = 'upload'; s.bossFace = null; changed(); }
+        catch { host.querySelector('.cr-bpNote').textContent = L('이 사진은 열 수 없어요', 'Couldn\'t open that image'); }
+    });
+    host.addEventListener('input', e => {
+        const k = e.target.dataset?.bpk; if (!k) return;
+        const f = { ...(s.bossFace || BOSS_FACE0) };
+        f[k] = k === 'z' ? +e.target.value / 100 : +e.target.value;
+        s.bossFace = f;
+        const face = host.querySelector('.cr-face.photo'); if (face) face.style.cssText = `width:54px;height:54px;${bossFaceStyle()}`;
+        save();
+    });
+    host.addEventListener('change', e => { if (e.target.dataset?.bpk) emitSettings('bossPhoto', scope); });
+}
+
 /** 설정 칸 안의 입력들에 바꾸기 연결 */
 export function bindFields(box, scope) {
     const s = S();
     const on = (k, ev, fn) => box.querySelector(`[data-s="${k}"]`)?.addEventListener(ev, e => { fn(e.target); save(); emitSettings(k, scope); });
     box.querySelector('[data-s="bossName"]')?.addEventListener('change', e => setBossName(e.target.value, scope));
     box.querySelector('[data-s="shopName"]')?.addEventListener('change', e => setShopName(e.target.value, scope));
+    bindBossPhoto(box, scope);
     on('winSize', 'change', t => { s.winSize = t.value; });
     on('lang', 'change', t => { s.lang = t.value; resetLang(); });
     on('rememberZoom', 'change', t => { s.rememberZoom = t.checked; });

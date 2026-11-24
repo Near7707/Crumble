@@ -9,7 +9,7 @@ import {
     TAGS, catchUp, storeAway, tagLabel, weatherLabel, roleLabel, workingStaff, inboxInfo, decideInbox,
     fireStaff, assignRoles, nextDayNow, kindTitle, hasTag, shortAway, logBoss,
 } from './rules.js';
-import { faceChip, faceStyle, ICON } from './looks.js';
+import { faceChip, faceStyle, ICON, bossFace } from './looks.js';
 import { createScene } from './scene.js';
 import { awayJournal, makeManual, FALLBACK_KEYS, bossLabel, remakeLines, cardExampleLines } from './ai.js';
 import { line, tapLine } from './lines.js';
@@ -427,7 +427,7 @@ function chunkStats(c) {
     return `<div class="cr-lgStats">${box(L('손님', 'Guests'), F(L('{n}명', '{n}'), { n: st.guests }))}${box(L('매출', 'Sales'), money(st.sales || 0))}${box(L('새는 돈', 'Leaked'), money(st.leak || 0), st.leak ? 'neg' : '')}</div>`;
 }
 function logItem(it) {
-    const face = it.boss ? '<span class="cr-face boss" aria-hidden="true">👑</span>' : it.sid && staffById(it.sid) ? faceChip(it.sid, 24) : '<span class="cr-face blank"></span>';
+    const face = it.boss ? bossFace(24) : it.sid && staffById(it.sid) ? faceChip(it.sid, 24) : '<span class="cr-face blank"></span>';
     const cc = it.cc || (it.boss ? 'boss' : it.good ? 'up' : 'dn');
     return `<div class="cr-lgRow${it.boss ? ' boss' : ''}${it.follow ? ' follow' : ''}">${it.follow ? '<span class="cr-lgArrow" aria-hidden="true">↳</span>' : ''}<time>${esc(it.t || '')}</time>${face}<span class="cr-lgText"><span class="cr-nd ${esc(it.k || 'work')}"></span>${esc(it.text)}</span>${it.chip ? `<span class="cr-chip ${esc(cc)}">${esc(it.chip)}</span>` : ''}</div>`;
 }
@@ -454,7 +454,7 @@ function shopLogHtml(g) {
     if (!g.away?.loading) { g.logSeenAt = Date.now(); if (g.away) g.away.seen = true; }
     return h;
 }
-function redrawShopLog() {
+export function redrawShopLog() {
     const el = root?.querySelector('#cr-shopLog'); if (!el) return;
     el.outerHTML = shopLogHtml(G());
 }
@@ -530,7 +530,7 @@ function staffSub(s, b) {
             const others = [{ id: 'boss' }, ...g.staff.filter(o => o.id !== s.id)];
             return others.map(o => {
                 const r = o.id === 'boss' ? rel('boss', s.id) : rel(s.id, o.id);
-                const face = o.id === 'boss' ? `<span class="cr-face boss">👑</span>` : faceChip(o.id, 30);
+                const face = o.id === 'boss' ? bossFace(30) : faceChip(o.id, 30);
                 const nm = o.id === 'boss' ? bossLabel() : book(o.id)?.name;
                 return `<div class="cr-relrow">${face}<div style="flex:1"><div class="cr-row"><b>${esc(nm)}</b>${heartRow(r.v)}<span class="cr-muted">${r.v}</span></div>${r.memo ? `<p class="cr-muted">${esc(r.memo)}</p>` : ''}</div></div>`;
             }).join('') || `<p class="cr-muted">${L('아직 관계가 없어요.', 'No bonds yet.')}</p>`;
@@ -573,7 +573,7 @@ function journalTab() {
 <div class="cr-muted">${L('최고 평판', 'Best rep')} ${p.maxRep} · ${L('가장 많이 번 날', 'Best day')} ${p.bestDay ? F(L('{d}일 {m}', 'D{d} {m}'), { d: p.bestDay.day, m: money(p.bestDay.revenue) }) : '-'}</div>
 ${(p.memorable || []).map(m => `<div class="cr-hist"><span class="cr-pill day sm">${F(L('{n}일', 'D{n}'), { n: m.day })}</span>${esc(m.title)}${m.text ? ' — ' + esc(m.text) : ''}</div>`).join('')}
 ${(p.reviews || []).map(r => `<div class="cr-hist"><b>${esc(r.name)}</b> ${esc(r.text)}</div>`).join('')}
-${p.bossWords ? `<p class="cr-say">👑 “${esc(p.bossWords)}”</p>` : ''}</section>`).join('');
+${p.bossWords ? `<p class="cr-say cr-bossSay">${bossFace(22)} “${esc(p.bossWords)}”</p>` : ''}</section>`).join('');
     }
     if (!g.journal.length) return h + `<p class="cr-muted cr-center">${L('아직 기록이 없어요. 첫 영업을 시작해 보세요!', 'Nothing yet. Open the shop for the first time!')}</p>`;
     return h + g.journal.map(j => `<section class="cr-card cr-jday ${j.mode}"><div class="cr-ttl"><span class="cr-pill day sm">${F(L('{n}일째', 'Day {n}'), { n: j.day })}</span>${j.mode === 'auto' ? (j.short ? F(L('사장님 잠깐 없음 · {t}', 'Boss stepped out · {t}'), { t: j.short >= 90 ? F(L('약 {n}시간', '~{n}h'), { n: Math.round(j.short / 60) }) : F(L('약 {n}분', '~{n} min'), { n: j.short }) }) : L('사장님 없음', 'Boss away')) : L('직접 영업', 'You ran it')}<small>${weatherLabel(j.weather)}</small></div>
@@ -644,6 +644,7 @@ onSettings((key, scope) => {
     // 확장 설정 칸에서 바꿨거나 언어가 바뀌면 창 안 설정도 다시 그림
     if (scope !== 'game' || key === 'lang') redrawSettingsModal();
     if (key === 'shopName') { refreshShopName(); return; }
+    if (key === 'bossPhoto') { if (!businessActive()) softRender(); return; } // 0.3.1 사장 사진 (영업 중엔 다음에 그릴 때부터)
     if (!['lang', 'bossName', 'winSize'].includes(key)) return;
     if (businessActive()) { if (key !== 'winSize') toast(L('영업이 끝나면 화면에 반영돼요', 'Shows up after today\'s business')); return; }
     softRender();
