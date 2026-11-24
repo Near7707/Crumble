@@ -51,7 +51,7 @@ const autoFocus = el => { if (el && !touchScreen()) el.focus(); };
 function fitToScreen() {
     if (!root || !root.classList.contains('open')) return;
     let vv = window.visualViewport;
-    // 키보드를 닫은 직후 아이폰은 약 0.4초 동안 "보이는 화면" 값을 키보드 있을 때 그대로 알려 준다 (0.2.11 기록으로 확인).
+    // 키보드를 닫은 직후 아이폰은 약 0.4초 동안 "보이는 화면" 값을 키보드 있을 때 그대로 알려 준다 (0.2.11 화면 위치 기록으로 확인).
     // 그동안 페이지 높이는 이미 원래대로라서, 그 틀린 값 대신 페이지 기준(꽉 채우기)으로 맞춘다.
     if (vv && kbClosing && window.innerHeight >= kbFullH - 4 && vv.height < window.innerHeight - 4) vv = null;
     const w = vv ? vv.width : window.innerWidth, h = vv ? vv.height : window.innerHeight;
@@ -82,12 +82,11 @@ const vvH = () => window.visualViewport ? window.visualViewport.height : window.
 function kbStart() {
     kbClosing = false;
     if (kbRaf) { cancelAnimationFrame(kbRaf); kbRaf = 0; }
-    else if (!root.classList.contains('cr-kb')) { kbFullH = vvH(); vpBegin(); }
+    else if (!root.classList.contains('cr-kb')) kbFullH = vvH();
     root.classList.add('cr-kb');
 }
 function kbEnd() {
     if (!root?.classList.contains('cr-kb') || kbRaf) return;
-    vpClose();
     kbStop = performance.now() + 3000;
     kbClosing = kbFullH > 0;
     const step = () => {
@@ -117,65 +116,9 @@ const fitSoon = () => {
     if (!fitRaf) fitFollow();
     fitT.forEach(clearTimeout); fitT = [1100, 1500].map(ms => setTimeout(fitToScreen, ms));
 };
-window.visualViewport?.addEventListener('resize', () => { vpMark('vv resize'); fitSoon(); });
-window.visualViewport?.addEventListener('scroll', () => { vpMark('vv scroll'); fitSoon(); });
+window.visualViewport?.addEventListener('resize', fitSoon);
+window.visualViewport?.addEventListener('scroll', fitSoon);
 window.addEventListener('orientationchange', fitSoon);
-
-// ── 문제 찾기용: 화면 위치 기록 (설정 "화면 위치 기록", 기본 끔) ──
-// 입력 시작 전 값 1줄 + 키보드 뜬 뒤 1줄, 그리고 입력을 끝낸 순간부터 5초 동안 값이 바뀔 때마다 1줄씩 적어
-// 끝나면 화면 왼쪽 위에 표로 보여 준다 (사용자가 캡처해서 보내 주는 용도). 끄면 아무것도 안 함.
-let vpLog = null, vpT0 = 0, vpLast = '', vpRaf = 0, vpUntil = 0;
-const vpOn = () => !!S().vpDebug;
-function vpRow(ev = '') {
-    if (!vpLog) return;
-    const vv = window.visualViewport, r = root?.getBoundingClientRect();
-    const v = [vv ? Math.round(vv.height) : '-', vv ? Math.round(vv.offsetTop) : '-', window.innerHeight, Math.round(window.scrollY),
-        r ? Math.round(r.top) : '-', r ? Math.round(r.height) : '-', root?.classList.contains('cr-kb') ? 'kb' : ''];
-    const k = v.join(' ');
-    if (!ev && k === vpLast) return;
-    vpLast = k;
-    vpLog.push([vpT0 ? Math.round(performance.now() - vpT0) : 'before', ...v, ev]);
-    if (vpLog.length > 40) vpLog.splice(3, 1);
-}
-function vpMark(ev) { if (vpLog && (vpRaf || !vpT0)) vpRow(ev); }
-function vpBegin() {
-    if (!vpOn()) { vpLog = null; return; }
-    if (vpRaf) { cancelAnimationFrame(vpRaf); vpRaf = 0; }
-    vpLog = []; vpT0 = 0; vpLast = '';
-    vpRow(L('입력 전', 'before typing'));
-    setTimeout(() => { if (vpLog && !vpT0) vpRow(L('키보드 뜬 뒤', 'keyboard up')); }, 1200);
-}
-function vpClose() {
-    if (!vpLog || !vpOn()) return;
-    vpT0 = performance.now(); vpLast = '';
-    vpRow(L('닫음', 'closed'));
-    vpUntil = vpT0 + 5000;
-    const step = () => {
-        vpRow();
-        if (performance.now() < vpUntil) { vpRaf = requestAnimationFrame(step); return; }
-        vpRaf = 0; vpRow(L('5초', '5s')); vpShow();
-    };
-    vpRaf = requestAnimationFrame(step);
-}
-function vpShow() {
-    const log = vpLog; vpLog = null; vpT0 = 0;
-    if (!log) return;
-    document.getElementById('crumble-vplog')?.remove();
-    const box = document.createElement('div');
-    box.id = 'crumble-vplog';
-    Object.assign(box.style, { position: 'fixed', left: '6px', top: '6px', zIndex: 2147483647, background: 'rgba(20,12,6,.88)', color: '#fff',
-        font: '10px/1.35 ui-monospace,Menlo,monospace', padding: '6px 8px', borderRadius: '8px', maxWidth: 'calc(100vw - 12px)', maxHeight: '80vh', overflow: 'auto', whiteSpace: 'pre' });
-    const head = ['ms', 'vvH', 'vvTop', 'inH', 'scrY', 'top', 'h', 'kb', ''];
-    const rows = [head, ...log].map(r => r.map((c, i) => String(c).padStart(i === 8 ? 0 : i === 0 ? 6 : 5)).join(' ')).join('\n');
-    box.textContent = `Crumble ${L('화면 위치 기록', 'screen log')} · screen ${screen.width}×${screen.height}\n` + rows;
-    const x = document.createElement('button');
-    x.textContent = '✕';
-    Object.assign(x.style, { position: 'sticky', float: 'right', top: '0', marginLeft: '8px', background: '#fff', color: '#000', border: '0', borderRadius: '6px', padding: '2px 8px', font: '14px sans-serif' });
-    x.onclick = () => box.remove();
-    box.prepend(x);
-    ['touchstart', 'touchmove', 'wheel', 'click'].forEach(t => box.addEventListener(t, e => e.stopPropagation(), { passive: true }));
-    document.body.appendChild(box);
-}
 
 // 창 크기: 자동이면 폰은 작게(꽉 차게), 컴퓨터는 크게
 export function winSizeNow() {
@@ -193,7 +136,6 @@ export function applyWinSize() {
 }
 let resizeT = null;
 window.addEventListener('resize', () => {
-    vpMark('win resize');
     fitSoon();
     if (!view.open || (S().winSize || 'auto') !== 'auto') return;
     clearTimeout(resizeT);
@@ -456,7 +398,7 @@ function dayResultHtml(g) {
         .map((n, i) => ({ ...n, i })).sort((a, b) => rank(a) - rank(b) || b.i - a.i)
         .filter(n => { const k = String(n.key).replace(/[^a-z]/gi, '').slice(0, 5); if (seen.has(k)) return false; seen.add(k); return true; })
         .slice(0, 3).sort((a, b) => a.i - b.i);
-    return `<section class="cr-card cr-dayRes"><div class="cr-ttl">🌙 ${F(L('{n}일째 영업 결과', 'Day {n} results'), { n: g.day })}<small>${L('오늘 영업 끝', 'Closed for today')}</small></div>
+    return `<section class="cr-card cr-dayRes"><div class="cr-ttl">🌙 ${F(L('{n}일째 영업 결과', 'Day {n} results'), { n: g.day })}<small>${t.biz?.earlyAt ? F(L('일찍 닫음 · {t}', 'Closed early · {t}'), { t: t.biz.earlyAt }) : L('오늘 영업 끝', 'Closed for today')}</small></div>
 <b class="cr-big ${net < 0 ? 'neg' : 'pos'}">${signedMoney(net)}</b>
 <div class="cr-chips"><span class="cr-chip">${L('손님', 'Guests')} <b>${sum.served ?? 0}</b></span><span class="cr-chip ${repD >= 0 ? 'good' : 'warn'}">${L('평판', 'Rep')} <b>${Math.round(rep0)} → ${Math.round(rep1)}</b> ${repD >= 0 ? '▲' : '▼'}${Math.abs(repD)}</span>${(t.closed?.discarded || sum.spoiled) ? `<span class="cr-chip warn">${L('버린 재료', 'Tossed')} <b>${(t.closed?.discarded || 0) + (sum.spoiled || 0)}</b></span>` : ''}</div>
 ${picks.length ? picks.map(n => `<div class="cr-nrow"><time>${esc(n.t)}</time><span class="cr-nd ${n.k}"></span><span class="cr-nt">${esc(n.text)}</span>${n.chip ? `<span class="cr-chip ${n.good ? 'up' : 'dn'}">${esc(n.chip)}</span>` : ''}</div>`).join('') : `<p class="cr-muted">${L('별일 없이 조용한 하루였어요.', 'A quiet day with nothing much going on.')}</p>`}

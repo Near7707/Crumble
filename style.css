@@ -378,7 +378,9 @@ button.cr-ent { cursor: pointer; }
 .cr-bizTabs { padding-top: 2px; }
 .cr-inner.cr-onOther .cr-pause { visibility: hidden; }
 .cr-pauseBand { display: none; align-items: center; gap: 8px; padding: 6px 8px 6px 12px; border-radius: 14px; background: #FFF1D6; border: 1.5px solid #EBCB8B; font-size: 13px; font-weight: 700; }
-.cr-pauseBand .cr-pbtn { margin-left: auto; }
+.cr-pauseBand { flex-wrap: wrap; }
+.cr-pbBtns { margin-left: auto; display: flex; gap: 6px; align-items: center; }
+.cr-pbBtns .cr-btn.sm { min-height: 42px; }
 .cr-inner.cr-paused .cr-pauseBand { display: flex; }
 .cr-optDel { display: flex; flex-direction: column; gap: 1px; border-style: dashed; background: #FFF8EC; }
 .cr-optDel small { font-size: 11.5px; color: var(--cr-sub); font-weight: 400; }

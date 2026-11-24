@@ -13,7 +13,7 @@ import { createScene } from './scene.js';
 import { faceChip } from './looks.js';
 import { line, tapLine } from './lines.js';
 import { morningPrep, closingDiary } from './ai.js';
-import { render, addScene, openSheet, closeSheet, toast, logoHtml, headHtml, closeBtn, gearBtn, bizTabs, heartRow, bar, nameTag, closeWindow, inner } from './ui.js';
+import { render, addScene, openSheet, closeSheet, toast, confirmBox, logoHtml, headHtml, closeBtn, gearBtn, bizTabs, heartRow, bar, nameTag, closeWindow, inner } from './ui.js';
 
 let B = null; // 지금 돌아가는 영업
 const inflight = new Set(); // 지금 기다리는 AI 호출 (저장하지 않음 → 새로고침하면 다시 부름)
@@ -213,7 +213,7 @@ function openScreen(box) {
     const D = minutes * 60000;
     box.innerHTML = `${bizHead('open', { moneyHtml: `<span class="cr-money" id="cr-oMoney">💰 ${money(g.money)}</span>`, pause: `<button class="cr-pause sm" type="button" aria-label="${L('일시정지', 'Pause')}">${PAUSE}</button>`, clock: '<span id="cr-clock"></span>', fillId: 'cr-tfill' })}${bizTabs()}
 <main class="cr-main" data-biz>
-<div class="cr-pauseBand" role="status"><span>⏸ ${L('가게가 멈춰 있어요', 'The shop is paused')}</span><button type="button" class="cr-pbtn sm" data-b="resume">▶ ${L('다시 시작', 'Resume')}</button></div>
+<div class="cr-pauseBand" role="status"><span>⏸ ${L('가게가 멈춰 있어요', 'The shop is paused')}</span><span class="cr-pbBtns"><button type="button" class="cr-btn sm" data-b="closeEarly">🌙 ${L('오늘은 여기까지', 'Call it a day')}</button><button type="button" class="cr-pbtn sm" data-b="resume">▶ ${L('다시 시작', 'Resume')}</button></span></div>
 <div class="cr-sceneHost" id="cr-oScene"></div>
 <section class="cr-card cr-backlog cr-hide" id="cr-backlog"></section>
 <section class="cr-card cr-news" id="cr-news" aria-live="polite"></section>
@@ -876,9 +876,14 @@ ${B.backlog.map(x => `<div class="cr-whoRow">${faceChip(x.staffIds[0], 28)}<span
             }
         } catch { /* 끝 */ }
     };
-    const finish = async () => {
+    const finish = async (early = false) => {
         B.running = false;
         biz.finished = true;
+        if (early) {
+            // 일찍 닫기: 닫은 시각을 남겨 마감 화면·결과 카드에 보여 줌. 가게 로그에는 사장님 줄로.
+            biz.earlyAt = clockStr(true);
+            biz.news.push({ t: clockStr(), at: B.elapsed, k: 'boss', text: F(L('사장님이 일찍 문을 닫았어요 · {t}', 'You closed early · {t}'), { t: biz.earlyAt }), chip: '', good: false, key: 'early', sid: null, boss: true });
+        }
         // 영업이 먼저 끝나서 못 터진 "이어지는 일"은 다음 날로 (직원들끼리 영업한 날엔 사라짐)
         g.pendingFollow = (biz.follows || []).filter(x => !x.fired).slice(0, MAX_FOLLOW_PER_DAY).map(x => ({ ...x, carried: true, fired: false }));
         biz.shelfLeft = B.shelf;
@@ -887,11 +892,25 @@ ${B.backlog.map(x => `<div class="cr-whoRow">${faceChip(x.staffIds[0], 28)}<span
         B.backlog = [];
         t.events.filter(x => !x.done).forEach(x => (x.done = { skipped: true }));
         sc.setEnv({ tod: 'eve', weather: g.weather }); sc.sign('CLOSED');
-        toast(L('저녁 8시, 영업 끝!', '8 PM — closing time!'), 1800);
+        toast(early ? L('일찍 문을 닫았어요', 'Closed early') : L('저녁 8시, 영업 끝!', '8 PM — closing time!'), 1800);
         try { await new Promise(r => setTimeout(r, 1400)); } catch { /* */ }
         closeDay(g, biz);
         B = null;
         render();
+    };
+
+    // 🌙 오늘은 여기까지 (멈춤 띠 안 버튼): 물어보고 바로 마감 정산으로. 손님을 덜 받은 만큼 매출만 줄고 월급은 그대로.
+    const closeEarly = async () => {
+        if (!B || !B.running || B.closing) return;
+        B.closing = true;
+        const ok = await confirmBox(L('오늘은 여기까지 하고 문을 닫을까요? 손님을 덜 받아서 매출이 줄어요. 아직 안 생긴 일은 오늘은 없어요.', 'Close the shop for today? You\'ll serve fewer guests, so sales drop. Anything that hasn\'t happened yet won\'t happen today.'), L('문 닫기', 'Close'));
+        if (!B) return;
+        B.closing = false;
+        if (!ok || !B.running) return;
+        closeSheet();
+        B.sheetEv = null; B.resultOpen = false;
+        if (B.acc) B.acc.open = false;
+        await finish(true);
     };
 
     // ---------- 버튼 ----------
@@ -900,6 +919,7 @@ ${B.backlog.map(x => `<div class="cr-whoRow">${faceChip(x.staffIds[0], 28)}<span
         if (b) {
             if (b.dataset.b === 'find') { const en = B?.ents[b.dataset.id]; if (en) { sc.focus(en, 1.5); sc.jump(en); sc.say(en, tapLine(b.dataset.id), 1400); } }
             if (b.dataset.b === 'resume') { B.holdPause = false; pauseBusiness(false); }
+            if (b.dataset.b === 'closeEarly') closeEarly();
             if (b.dataset.b === 'blOpen') { const x = B.backlog.find(y => y.id === b.dataset.id); if (x) openEvent(x); }
             if (b.dataset.b === 'blAll') { for (const x of [...B.backlog]) finishEvent(0, canDelegate(x) ? 'delegate' : 'auto', x); }
             return;
@@ -935,7 +955,7 @@ function closeScreen(box) {
     const expOf = id => (biz.expLog || []).filter(x => x.id === id).reduce((a, x) => { a[x.skill] = (a[x.skill] || 0) + x.n; return a; }, {});
     const repD = Math.round(g.rep - biz.rep0), cleanD = Math.round(g.clean - biz.clean0);
     const net = g.money - biz.money0 - (t.spentIng || 0);
-    box.innerHTML = `${bizHead('close', { moneyHtml: `<span class="cr-money${g.money < 0 ? ' neg' : ''}">💰 ${money(g.money)}</span>`, clock: L('저녁 8:00', '8:00 PM'), fill: 100 })}${bizTabs()}
+    box.innerHTML = `${bizHead('close', { moneyHtml: `<span class="cr-money${g.money < 0 ? ' neg' : ''}">💰 ${money(g.money)}</span>`, clock: biz.earlyAt || L('저녁 8:00', '8:00 PM'), fill: 100 })}${bizTabs()}
 <main class="cr-main" data-biz>
 <div class="cr-sceneHost" id="cr-cScene"></div>
 <section class="cr-card"><div class="cr-ttl">💰 ${L('오늘 번 돈', 'Today\'s earnings')}<small>${F(L('{n}일째', 'Day {n}'), { n: g.day })}</small></div>
