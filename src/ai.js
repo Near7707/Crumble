@@ -4,6 +4,7 @@ import { ctx, parseJsonLoose, str, num } from './util.js';
 import { S, G, book, staffById, rel, menuInfo, shopName } from './state.js';
 import { EVENT_KINDS, TAGS, isImportantKind, WEATHER, roleLabel } from './rules.js';
 import { AI_LANG, isKo, L, money } from './i18n.js';
+import { FIX_CHOICES, PAIR_FIX, fixChoiceLabel, fixTitle } from './fixes.js';
 
 // 설정의 "사장 이름" → 없으면 페르소나 이름 → 없으면 "사장님"
 const bossName = () => String(S().bossName || '').trim() || ctx().name1 || (isKo() ? '사장님' : 'Boss');
@@ -347,19 +348,39 @@ export async function awayJournal(days) {
         ? `On day ${d0.day} the boss stepped away for about ${hrs}, ${d0.when === 'after' ? 'after closing time (the shop is closed, staff tidying up or hanging around)' : 'before opening (staff getting ready)'}.`
         : `The boss was away for ${days.length} day(s) (days ${days.map(d => d.day).join(', ')}). The staff ran the shop alone.`;
     const count = d0?.short ? `${Math.max(1, d0.picks.length)}` : '3-5';
+    // 0.3.2 수습 대기: 결과는 아직 안 정해짐. 이야기(원인·대사 3줄·지금 상태·선택지별 결과)를 같이 받음
+    const fixes = days.map(d => d.fix && (g.fixes || []).find(f => f.id === d.fix)).filter(Boolean);
+    const fixPart = fixes.length ? `
+
+UNRESOLVED TROUBLE (the boss must decide when back — do NOT resolve it in the journal):
+${fixes.map((f, i) => fixBrief(f, i, k)).join('\n\n')}
+
+For EACH unresolved trouble write a small story. Make it concrete and specific to these people (their flaws, habits, speech), small and slice-of-life. If they already have a relationship note, you may build on it. Vary the cause — not always food or cleaning.
+"fixes": [{"id":"F1",
+ "cause":"2-3 sentences: what exactly happened and why",
+ "lines":[{"who":"S1|S2|guest","text":"…"}, …] — EXACTLY 3 short lines of dialogue, alternating speakers, each in that person's own voice,
+ "now":"1 sentence: how things stand as the boss walks in",
+ "hints":["one short line per choice: what the boss would say when picking it (under 40 characters)"],
+ "results":[{"text":"1 sentence: what happens after that choice","bad":"1 sentence if it goes badly (only for choices marked [risky], else empty)","lines":[{"who":"…","text":"…"}] 1-2 short reactions,"memo":"short relationship note between the two staff (staff pairs only, else empty)"}] — one per choice, same order
+}]` : '';
     const prompt = `${head}
 Things that happened (decided by the game):
 ${picks || '(nothing special)'}
 
 STAFF:
-${staffBlock(ids, null)}
+${staffBlock(ids, fixes.length && S().cardRef !== 'none' ? id => fixes.some(f => f.staffIds.includes(id)) : null)}
 
 Write a short journal of ${count} entries about what happened while the boss was away, including the listed events${d0?.short ? '' : ' and some behind-the-scenes moments'}.
 Do NOT make it all heartwarming — include flaws and small mischief.
-Each entry: {"day": number, "staff": "S1", "time": "short time like 오후 3시 / 3 PM", "title": "short title", "text": "1-2 sentences"}.
-Return JSON: {"entries":[...]}`;
-    const j = await askJson(prompt, system());
-    if (!j || !Array.isArray(j.entries)) return null;
+Each entry: {"day": number, "staff": "S1", "time": "short time like 오후 3시 / 3 PM", "title": "short title", "text": "1-2 sentences"}.${fixPart}
+Return JSON: {"entries":[...]${fixes.length ? ',"fixes":[...]' : ''}}`;
+    const j = await askJson(prompt, system(), 2, fixes.length ? Math.min(4200, 1800 + fixes.length * 900) : 0);
+    if (!j) return null;
+    if (fixes.length && Array.isArray(j.fixes)) fixes.forEach((f, i) => {
+        const raw = j.fixes.find(x => String(x?.id).trim() === `F${i + 1}`) || j.fixes[i];
+        if (raw) f.story = mergeStory(f, raw, km);
+    });
+    if (!Array.isArray(j.entries)) return null;
     return j.entries.slice(0, 5).map(e => ({
         day: Math.round(num(e.day, 0, 99999, days[0].day)),
         staffId: km[String(e.staff).trim()] || ids.find(id => book(id)?.name === e.staff) || null,
@@ -367,6 +388,47 @@ Return JSON: {"entries":[...]}`;
         title: str(e.title, 40),
         text: str(e.text, 220),
     })).filter(e => e.title || e.text);
+}
+
+/** AI에게 보낼 수습 대기 설명 한 덩어리 */
+function fixBrief(f, i, k) {
+    const a = f.staffIds[0], b = f.staffIds[1] || f.with;
+    const who = {
+        fight: `${k(a)} and ${k(b)} had a quarrel.`,
+        friends: `${k(a)} and ${k(b)} (close friends) did something together the boss should know about — covering for each other, slacking together, a secret experiment, an inside joke gone wrong, etc.`,
+        rude: `A difficult customer got angry at ${k(a)} and will come back to see the owner. Dialogue is between "guest" and ${k(a)}.`,
+        spoil: `The fridge broke. ${k(a)} is involved${b ? `, ${k(b)} noticed/complained` : ''}. Maybe someone's habit caused it.`,
+    }[f.kind];
+    const r = PAIR_FIX(f.kind) ? rel(a, b) : null;
+    const ch = FIX_CHOICES[f.kind].map((c, n) => `  ${n + 1}. ${fixChoiceLabel(f, n)}${c.eff.gamble ? ' [risky]' : ''}`).join('\n');
+    return `[F${i + 1}] ${fixTitle(f)} (day ${f.day}) — ${who}${r ? `\nTheir relationship: ${r.v} (-100..100)${r.memo ? ` — note: ${r.memo}` : ''}` : ''}
+Choices the boss will get:
+${ch}`;
+}
+
+/** AI 이야기 + 기본 이야기 합치기 (빠지거나 이상한 칸은 기본 이야기로) */
+function mergeStory(f, raw, km) {
+    const fb = f.story || {};
+    const a = f.staffIds[0], b = f.staffIds[1] || f.with;
+    const w = v => { const x = String(v || '').trim(); if (/^guest$/i.test(x) || /손님|customer/i.test(x)) return f.kind === 'rude' ? 'guest' : null; const id = km[x] || null; return id === a ? 'a' : id && id === b ? 'b' : null; };
+    const lines = (arr, max) => (Array.isArray(arr) ? arr : []).map(x => ({ w: w(x?.who), t: str(x?.text, 140) })).filter(x => x.w && x.t).slice(0, max);
+    const n = FIX_CHOICES[f.kind].length;
+    const ln = lines(raw.lines, 3);
+    const hints = Array.isArray(raw.hints) && raw.hints.length === n ? raw.hints.map(h => str(h, 60)) : fb.hints;
+    const res = (fb.res || []).map((r0, i) => {
+        const x = Array.isArray(raw.results) ? raw.results[i] : null;
+        if (!x || !str(x.text, 200)) return r0;
+        const rl = lines(x.lines, 2);
+        return { t: str(x.text, 200), bad: str(x.bad, 200) || r0.bad, lines: rl.length ? rl : r0.lines, memo: PAIR_FIX(f.kind) ? (str(x.memo, 70) || r0.memo) : '' };
+    });
+    return {
+        ai: true,
+        cause: str(raw.cause, 320) || fb.cause,
+        lines: ln.length >= 2 ? ln : fb.lines,
+        now: str(raw.now, 160) || fb.now,
+        hints,
+        res,
+    };
 }
 
 // ---------- 5. 폐업: 마지막 한마디 + 폐업 일지 (한 번에) ----------

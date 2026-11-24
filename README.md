@@ -14,6 +14,7 @@
 - **사고 현장에 끼어들기.** 직원이 몰래 먹거나, 덤을 막 주거나, 수다 떠느라 계산대를 비우거나, 졸고 있으면 머리 위에 빨간 "!"가 떠요. 누르면 가게가 멈추고 한마디 할 수 있어요 (지시 4가지). 직원은 성격·기분·사장님과 사이에 따라 **따르거나, 미루거나, 안 듣거나, 엉뚱하게 알아들어요.** 그 모습이 장면에서 그대로 보이고, 가끔은 시간이 지나 "아까 그 일" 때문에 다른 일이 이어져요 (가게 로그에 지시 바로 아래 ↳로 남아요).
 - **가게 대책.** 같은 사고가 하루에 두 번째면 지시 창에 [📌 대책 걸기]가 떠요. 가게 탭 "가게 대책" 칸에서도 걸 수 있어요. 간식 바구니·서비스 하루 2개·쉬는 시간처럼 며칠 가는 지시를 직원별로 최대 3개까지 걸 수 있고, 경고는 자리를 안 차지해요. 다만 직원이 자기 성격대로 받아들여서 **반쪽 효과·역효과·예상 밖 전개·뜻밖의 행운**이 나올 수 있어요. 걸어 봐야 알아요.
 - **사장 사진.** ⚙ 설정 "사장 사진"에서 페르소나 사진을 그대로 쓰거나(기본), 사진을 올리거나, 동그라미 안 위치를 맞출 수 있어요. 지시 창·대책 창·가게 로그·관계 탭의 사장님 자리에 나와요. 올린 사진은 작게 줄여서 확장 설정에만 저장하고, 실리태번 파일은 건드리지 않아요.
+- **수습 대기.** 직원들끼리 영업한 날 큰 일(직원끼리 싸움, 친한 사이 사건, 진상 손님, 냉장고 고장)이 생기면 결과가 바로 정해지지 않고 가게 로그 맨 위에 **수습 대기**로 남아요 (최대 3개). 무슨 일이 있었는지 이야기와 대사를 보고 사장님이 고르면 그때 결과가 정해져요. 싸움이면 누구 편을 들지도 고를 수 있고, 관계 메모에 남아요. 돌아온 뒤 3일 안 보면 직원이 알아서 처리해요. 사장님 없는 날 사건으로 새는 돈은 그날 매출의 30%까지만이에요.
 - **오늘은 여기까지.** 영업 중 ⏸로 멈추면 [🌙 오늘은 여기까지]로 일찍 문을 닫고 바로 마감 정산으로 갈 수 있어요. 손님을 덜 받은 만큼 매출은 줄고 월급은 그대로예요.
 - **말투 샘플.** 직원 설명서에 RP 속 실제 대사를 넣으면 그 말투를 따라 해요. 다른 언어로 적어도 느낌만 살려 옮겨요.
 - **사장님이 없을 때도 가게는 돌아가요.** 창을 닫아 두면 8시간(설정)마다 직원들끼리 하루를 영업하고, 다시 켜면 그동안 있었던 일이 **가게 로그**에 정리돼 있어요 (최대 3일치). 가게 로그에는 사장님이 있을 때·없을 때 일이 시간 덩어리로 쌓이고, 손님·매출·새는 돈도 같이 보여요. 그보다 짧게 창을 30분 넘게 닫아 두면 작은 일이 쌓이고, 영업 중에 1시간 넘게 비우면 밀린 일이 기다리고 있어요. 자리 비운 사이에 망하지는 않아요.
@@ -49,7 +50,7 @@ https://github.com/Near7707/Crumble
 
 - 고용할 때 1번 (직원 설명서 만들기)
 - 직접 영업 하루에 2번 (아침에 대사·사건 글 / 마감에 일기)
-- 다시 켰을 때 자동 운영 일지 1번 (같은 날 잠깐 비운 일지는 하루 3번까지), 폐업 때 1번
+- 다시 켰을 때 자동 운영 일지 1번 (같은 날 잠깐 비운 일지는 하루 3번까지), 폐업 때 1번. 수습 대기가 생겼으면 그 이야기도 이 호출에서 같이 받아요 (그래서 글이 조금 길어져요).
 - 영업 중 밀린 일이 생기면 사건 글 1번
 - 가게 장면 속 움직임·아이콘, 지시에 대한 반응도 전부 규칙으로 정해서 AI를 부르지 않아요. 반응 말풍선은 아침 호출 때 직원 말투로 미리 받아 둬요.
 - AI가 응답하지 않으면 기본 대사로 계속 진행돼요. 기본 말풍선은 고용할 때 그 직원 말투로 같이 만들어 둬요 (설명서 [고치기]에서 바꿀 수 있어요).
@@ -89,6 +90,7 @@ A shop-management extension for SillyTavern: characters from your character card
 - **Step in when things go wrong.** When someone sneaks dessert, hands out freebies, leaves the counter to chat, or dozes off, a red "!" appears over them. Tap it and the shop pauses so you can say something (4 orders). Depending on their personality, mood and how they feel about you, they'll **go along, stall, ignore you, or take it their own way** — and you see it play out in the shop. Sometimes something follows later because of what happened earlier (it shows up in the shop log right under your order, marked ↳).
 - **House rules.** When the same slip-up happens twice in a day, the order sheet offers [📌 Set a house rule]; you can also set one from the House rules card on the Shop tab. Rules like a snack basket, two freebies a day, or set breaks last a few days, up to 3 at once (a warning takes no slot). But staff take them in their own way, so a rule may come out **Half worked, Backfired, Unexpected turn, or Lucky break** — you only find out by trying.
 - **Money in English** is shown in dollars (₩1,000 = $1). The numbers in the game are the same.
+- **Waiting on you.** When something big happens on a day the staff run the shop alone (a staff quarrel, close friends up to something, a difficult customer, a broken fridge), it isn't settled on the spot — it waits at the top of the shop log (up to 3). Read what happened, with a few lines of dialogue, and your choice decides how it ends. In a quarrel you can pick whose side to take, and it goes into their relationship note. Leave it 3 days after you're back and the staff handle it themselves. Money lost to trouble on days away is capped at 30% of that day's sales.
 - **Owner photo.** In ⚙ Settings → Owner photo, use your persona avatar (default), upload a photo, or adjust the framing. It shows wherever you appear: order and house rule sheets, the shop log, and the Relationships tab. Uploaded photos are shrunk and saved only in the extension settings; your SillyTavern files are never touched.
 - **Call it a day.** Pause with ⏸ during business and tap [🌙 Call it a day] to close early and go straight to closing up. You serve fewer guests, so sales drop, but wages stay the same.
 - **Voice samples.** Paste real roleplay lines into a staff manual and they'll talk like that — in any language, the feel carries over.
@@ -125,7 +127,7 @@ Under **Crumble** in the extension settings, or with the **⚙ button** at the t
 
 - 1 per hire (writing the staff manual)
 - 2 per business day (morning lines & event text / closing diaries)
-- 1 for the away log when you return (same-day short breaks: up to 3 a day), 1 for the closing-down ending
+- 1 for the away log when you return (same-day short breaks: up to 3 a day), 1 for the closing-down ending. Stories for anything waiting on you come in that same call (so it runs a bit longer).
 - 1 for event text when a business backlog piles up
 - Movement and icons in the shop scene, and how staff react to your orders, are rule-based — no AI calls. Their reaction lines are written in their voice during the morning call.
 - If the AI doesn't answer, the game continues with default lines. Each staff member's fallback bubbles are written in their own voice when hired (editable under Edit manual).

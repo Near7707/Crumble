@@ -17,6 +17,7 @@ import { renderBusiness, resumeIfNeeded, businessActive, pauseBusiness, bizPause
 import { fieldsHtml, bindFields, onSettings, personaName, setBossName, setShopName } from './settings.js';
 import { renderEnding } from './ending.js';
 import { hrAction, ruleCardHtml } from './hrui.js';
+import { fixAction, fixBlockHtml } from './fixui.js';
 
 export const view = { tab: 'shop', staffIdx: 0, staffSub: 'stats', journal: 'this', open: false, bizTab: 'biz', logFilter: 'all', logFold: {} };
 let root = null, scenes = [], shopTimer = null, awayBusy = false;
@@ -283,14 +284,14 @@ export function headHtml(biz = null) {
 function tabsHtml() {
     const g = G();
     const t = (id, ico, ko, en, badge) => `<button type="button" class="cr-tab${view.tab === id ? ' on' : ''}" data-tab="${id}">${ico} ${L(ko, en)}${badge ? `<b class="cr-badge">${badge}</b>` : ''}</button>`;
-    return `<nav class="cr-tabs">${t('shop', '🏪', '가게', 'Shop')}${t('staff', '👩‍🍳', '직원', 'Staff')}${t('inbox', '📋', '결재함', 'Inbox', g.inbox.length || '')}${t('journal', '📖', '일지', 'Log')}</nav>`;
+    return `<nav class="cr-tabs">${t('shop', '🏪', '가게', 'Shop', (g.fixes || []).length || '')}${t('staff', '👩‍🍳', '직원', 'Staff')}${t('inbox', '📋', '결재함', 'Inbox', g.inbox.length || '')}${t('journal', '📖', '일지', 'Log')}</nav>`;
 }
 // ---------- 영업 중 탭 ----------
 let bizAutoPaused = false;
 export function bizTabs() {
     const g = G();
     const t = (id, ico, ko, en, badge) => `<button type="button" class="cr-tab${view.bizTab === id ? ' on' : ''}" data-btab="${id}">${ico} ${L(ko, en)}${badge ? `<b class="cr-badge">${badge}</b>` : ''}</button>`;
-    return `<nav class="cr-tabs cr-bizTabs">${t('biz', '☕', '영업', 'Floor')}${t('shop', '🏪', '가게', 'Shop')}${t('staff', '👩‍🍳', '직원', 'Staff')}${t('inbox', '📋', '결재함', 'Inbox', g.inbox.length || '')}${t('journal', '📖', '일지', 'Log')}</nav>`;
+    return `<nav class="cr-tabs cr-bizTabs">${t('biz', '☕', '영업', 'Floor')}${t('shop', '🏪', '가게', 'Shop', (g.fixes || []).length || '')}${t('staff', '👩‍🍳', '직원', 'Staff')}${t('inbox', '📋', '결재함', 'Inbox', g.inbox.length || '')}${t('journal', '📖', '일지', 'Log')}</nav>`;
 }
 function drawOtherTab() {
     const box = inner();
@@ -440,6 +441,7 @@ function shopLogHtml(g) {
     const seg = (id, ko, en) => `<button type="button" class="${f === id ? 'on' : ''}" data-act="logFilter" data-id="${id}" aria-pressed="${f === id}">${L(ko, en)}</button>`;
     let h = `<section class="cr-card cr-shopLog" id="cr-shopLog"><div class="cr-ttl">📜 ${L('가게 로그', 'Shop log')}${newN ? `<span class="cr-new">${F(L('새 일 {n}건', '{n} new'), { n: newN })}</span>` : ''}<small>${L('마지막으로 본 뒤', 'Since you last looked')}</small></div>
 <div class="cr-seg sm">${seg('all', '전체', 'All')}${seg('present', '있을 때', 'With you')}${seg('away', '없을 때', 'Without you')}</div>`;
+    h += fixBlockHtml(g); // 0.3.2 수습 대기는 어떤 필터든 맨 위
     // 자리 비운 동안 일을 AI가 정리하는 중
     if (g.away?.loading && f !== 'present') h += `<div class="cr-lgChunk away"><div class="cr-lgHead"><b>${L('사장님 없음 · 직원들끼리', 'Boss away · staff on their own')}</b></div><div class="cr-muted cr-loading">${L('직원들이 그동안 있었던 일을 정리하는 중…', 'The staff are writing up what happened…')}</div></div>`;
     if (!list.length && !g.away?.loading) h += `<p class="cr-muted">${f === 'all' ? L('아직 기록이 없어요. 영업하거나 창을 닫아 두면 여기에 쌓여요.', 'Nothing yet. Run the shop or leave the window closed and things pile up here.') : L('이쪽 기록은 아직 없어요.', 'Nothing here yet.')}</p>`;
@@ -927,6 +929,7 @@ async function onClick(e) {
     const g = G();
     const a = t.dataset.act;
     if (a?.startsWith('hr') && hrAction(a, t)) return; // 0.3.0 가게 대책
+    if (a?.startsWith('fix') && fixAction(a, t)) return; // 0.3.2 수습 대기
     switch (a) {
         case 'close': closeWindow(); break;
         case 'settings': openSettings(); break;

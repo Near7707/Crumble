@@ -106,6 +106,7 @@ export function newGame(carryRelations = null) {
         wageRate: 1,
         effects: [], // 며칠 이어지는 효과 {kind, until}
         pending: [], // 나중에 터질 일 {a,b,day,text}
+        fixes: [], // 0.3.2 수습 대기 (사장님이 돌아와야 결과가 정해지는 일) {id,kind,staffIds,with,day,from,story}
         shopLog: [], // 가게 로그 덩어리 {kind:'present'|'away', items:[]}
         recentEv: [], // 최근 나온 사건 {kind,day} — 같은 사건이 계속 나오지 않게
         notices: [], // 다음 날 아침 알림 (밤도둑 등)
@@ -127,7 +128,7 @@ export function ensureGame() {
 }
 
 function migrate(g) {
-    g.rules ??= []; g.accSeen ??= {};
+    g.rules ??= []; g.accSeen ??= {}; g.fixes ??= [];
     g.effects ??= []; g.pending ??= []; g.notices ??= []; g.inbox ??= []; g.inboxHistory ??= [];
     g.memory ??= {}; g.rel ??= {}; g.journal ??= []; g.zoom ??= {};
     g.stats ??= { bestDay: null, maxRep: g.rep, directDays: 0, autoDays: 0, memorable: [] };

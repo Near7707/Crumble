@@ -4,8 +4,9 @@ import {
     G, S, save, book, staffById, rel, addRel, bossRel, remember, addJournal, addExp,
     WAGE, ING_PRICE, MAX_INBOX, menuInfo, MENU_POOL,
 } from './state.js';
-import { L, money } from './i18n.js';
+import { L, F, money } from './i18n.js';
 import { rulesDayStart, rulesDayEnd, filterAutoPicks, ruleMul } from './houserules.js';
+import { FIX_MAX, FIX_DAYS, FIX_SCALE, LEAK_CAP, FIX_CHOICES, PAIR_FIX, makeFixStory, fixChoiceLabel, fixTitle, fillNames } from './fixes.js';
 
 // ---------- 성격 태그 (사건 고르기·장면 행동에만 씀) ----------
 export const TAGS = {
@@ -75,6 +76,10 @@ export function catchUp(minutes = 0) {
     g.day += 1;
     g.dayKey = dayKey();
     startDay(g);
+    // 0.3.2 수습 대기: 돌아온 날부터 3일을 셈. 이미 셈이 끝난 건 직원이 알아서 (사장님 없음 덩어리에 남김)
+    const ex = expireFixes(g);
+    if (ex.length && days.length) (days[days.length - 1].hr ??= []).push(...ex);
+    for (const f of g.fixes) f.from ??= g.day;
     save();
     return days.length ? days : null;
 }
@@ -111,6 +116,8 @@ export function nextDayNow() {
     g.day += 1;
     g.dayKey = dayKey();
     startDay(g);
+    // 0.3.2 수습 대기를 3일 안 봤으면 직원이 알아서
+    for (const it of expireFixes(g)) presentChunk(g).items.push(it);
     save();
 }
 
@@ -748,6 +755,7 @@ export function fireStaff(id, quit = false) {
 // ---------- 자동 운영 (사장님 없음) ----------
 export function autoDay(g) {
     g.day += 1;
+    const fixGone = expireFixes(g); // 돌아온 뒤 3일 넘게 안 본 수습 대기
     g.pendingFollow = []; // 어제 못 터진 "이어지는 일"은 사장님 없는 날엔 그냥 지나감
     rulesDayStart(g);
     g.weather = rollWeather();
@@ -775,10 +783,12 @@ export function autoDay(g) {
     // 밤도둑 (피해 작게)
     const careless = g.staff.find(s => hasTag(s.id, 'clumsy', 'lazy'));
     if (careless && chance(.1)) picks.push({ id: uid('ev'), kind: 'nightThief', staffIds: [careless.id] });
-    applyAutoPicks(g, picks);
-    const hr = rulesDayEnd(g, null, true);
+    // 0.3.2 큰 일은 결과를 정하지 않고 "수습 대기"로 (하루 1개, 최대 3개)
+    const fix = makeFix(g, picks);
+    applyAutoPicks(g, picks, Math.round(revenue * LEAK_CAP));
+    const hr = [...fixGone, ...(fix ? [{ t: '', k: 'bad', text: `🧯 ${L('수습 대기', 'Waiting on you')} · ${fixTitle(fix)} — ${fix.story.now}`, sid: fix.staffIds[0] }] : []), ...rulesDayEnd(g, null, true)];
     g.stats.autoDays += 1;
-    return { day: g.day, weather: g.weather, money: g.money - before, rep: 0, picks, guests: sell, sales: revenue, leak: autoLeak(picks, avg), hr };
+    return { day: g.day, weather: g.weather, money: g.money - before, rep: 0, picks, guests: sell, sales: revenue, leak: autoLeak(picks, avg), hr, fix: fix?.id || null };
 }
 
 /** 자리 비운 동안 새는 돈: 사건으로 잃은 돈 + 몰래 먹은 디저트 */
@@ -792,13 +802,17 @@ function autoLeak(picks, avg) {
 }
 
 /** 사장님 없을 때 일어난 일들 적용 (자동 운영 규칙: 작게, 0 밑으로 안 떨어짐) */
-function applyAutoPicks(g, picks) {
+function applyAutoPicks(g, picks, cap = Infinity) {
+    // 0.3.2 새는 돈 상한: 직원들끼리 영업한 날 사건으로 잃는 돈은 cap(그날 매출의 30%)까지
+    let left = cap;
     for (const p of picks) {
-        if (p.kind === 'nightThief') { const loss = Math.min(5000, Math.max(0, g.money)); g.money -= loss; p.delta = { money: -loss }; continue; }
+        if (p.kind === 'nightThief') { const loss = Math.max(0, Math.min(5000, Math.max(0, g.money), left)); left -= loss; g.money -= loss; p.delta = { money: -loss }; continue; }
         const k = EVENT_KINDS[p.kind];
         const ci = randi(0, k.choices.length - 1);
         const eff = Object.fromEntries(Object.entries(k.choices[ci].eff).filter(([, v]) => typeof v === 'number').map(([a, v]) => [a, Math.round(v * .4)]));
-        if (eff.money) eff.money = Math.max(eff.money, -Math.min(3000, Math.max(0, g.money)));
+        if (eff.money) eff.money = Math.max(eff.money, -Math.max(0, Math.min(3000, Math.max(0, g.money), left)));
+        if (eff.money < 0) left += eff.money;
+        if (!eff.money) delete eff.money;
         p.delta = applyEff(g, eff, p, null);
         if (p.kind === 'sneak') g.ing = Math.max(0, g.ing - 1);
     }
@@ -854,6 +868,119 @@ export function storeAway(days, texts, prev = null) {
             ...days.flatMap(d => (d.hr || []).map(x => ({ t: '', k: x.k, text: x.text, chip: x.chip, good: !!x.good, sid: x.sid || null, boss: !!x.boss, cc: x.cc || '' })))],
     });
     save();
+}
+
+
+// ---------- 0.3.2 수습 대기 (사장님이 돌아와야 결과가 정해지는 일) ----------
+/** 지금 수습 대기 (그만둔 직원 일은 지움) */
+export function fixesOf(g) {
+    g.fixes = (g.fixes || []).filter(f => f.staffIds.every(id => staffById(id)));
+    return g.fixes;
+}
+/** 직원들끼리 영업한 날: 큰 일 하나를 수습 대기로 (하루 1개, 최대 3개) */
+function makeFix(g, picks) {
+    if (fixesOf(g).length >= FIX_MAX) return null;
+    const w = workingStaff(g);
+    if (!w.length) return null;
+    let kind = null, ids = null;
+    // 그날 생긴 싸움·친한 사이 사건은 결과를 정하지 않고 넘김
+    // 이미 기다리는 일과 같은 일(같은 두 사람의 싸움, 냉장고 고장 두 번 등)은 또 만들지 않음
+    const samePair = (a, b) => g.fixes.some(f => f.staffIds.length === 2 && f.staffIds.includes(a) && f.staffIds.includes(b));
+    const busy = k => g.fixes.some(f => f.kind === k);
+    const i = picks.findIndex(p => (p.kind === 'fight' || p.kind === 'friends') && !samePair(...p.staffIds));
+    if (i >= 0) { const p = picks.splice(i, 1)[0]; kind = p.kind; ids = p.staffIds; }
+    else if (chance(.4)) {
+        const opts = [];
+        // 사장님 없으면 난장판: 사이가 조금만 나빠도 싸움
+        const bad = [];
+        for (let a = 0; a < w.length; a++) for (let b = a + 1; b < w.length; b++) if (rel(w[a].id, w[b].id).v <= -10) bad.push([w[a].id, w[b].id]);
+        const free = bad.filter(([a, b]) => !samePair(a, b));
+        if (free.length) opts.push(['fight', pick(free), 1]);
+        const sv = roleStaff(g, 'serve'); if (sv && !busy('rude')) opts.push(['rude', [sv], .8]);
+        const bk = roleStaff(g, 'bake'); if (bk && !busy('spoil')) opts.push(['spoil', [bk], .5]);
+        if (!opts.length) return null;
+        let r = Math.random() * opts.reduce((t, o) => t + o[2], 0);
+        const o = opts.find(x => (r -= x[2]) <= 0) || opts[0];
+        [kind, ids] = o;
+    }
+    if (!kind) return null;
+    const other = PAIR_FIX(kind) ? null : (w.find(s => s.id !== ids[0])?.id || null);
+    // 최근에 쓴 기본 이야기는 피함
+    g.fixRecent ??= {};
+    const st = makeFixStory(kind, ids, other, g.fixRecent[kind] || []);
+    g.fixRecent[kind] = [st.vi, ...(g.fixRecent[kind] || [])].slice(0, 3);
+    const f = { id: uid('fx'), kind, staffIds: st.staffIds, with: st.with, day: g.day, from: null, story: st.story };
+    g.fixes.push(f);
+    noteRecentEvents(g, [{ kind }]);
+    return f;
+}
+/** 돌아온 뒤 3일 넘게 안 본 수습 대기 → 직원이 알아서 (효과 작게). 가게 로그 줄 목록을 돌려줌 */
+export function expireFixes(g) {
+    const out = [];
+    for (const f of [...fixesOf(g)]) {
+        if (f.from == null || g.day < f.from + FIX_DAYS) continue;
+        const r = resolveFix(g, f.id, fixPick(g, f), 'auto');
+        if (r) out.push(r.item);
+    }
+    return out;
+}
+/** 남은 날 (1 = 오늘까지) */
+export const fixLeft = (g, f) => (f.from == null ? FIX_DAYS : Math.max(1, f.from + FIX_DAYS - g.day));
+/** 맡기기 / 안 봐서 알아서 할 때 직원이 고르는 선택지 */
+export function fixPick(g, f) {
+    const ch = FIX_CHOICES[f.kind];
+    const d = ch.findIndex(c => c.eff.delegate);
+    if (d >= 0) return d;
+    if (PAIR_FIX(f.kind)) { const sl = ch.findIndex(c => c.eff.slide); return sl >= 0 ? sl : 0; }
+    return staffPick(g, { kind: f.kind, staffIds: f.staffIds }); // 냉장고: 선택지가 원래 사건과 같음
+}
+export const fixCanDelegate = f => !PAIR_FIX(f.kind);
+/**
+ * 수습하기. by: false = 사장님이 고름 / 'delegate' = 맡김 / 'auto' = 3일 안 봐서 직원이 알아서
+ * 반환: { f, ci, ids, delta, ok, result, label, exp, item }
+ */
+export function resolveFix(g, id, ci, by = false) {
+    const i = (g.fixes || []).findIndex(x => x.id === id); if (i < 0) return null;
+    const f = g.fixes[i];
+    const ch = FIX_CHOICES[f.kind]?.[ci]; if (!ch) return null;
+    const ids = ch.side === 1 ? [f.staffIds[1], f.staffIds[0]] : [...f.staffIds];
+    const base = ch.eff;
+    const scale = by === 'auto' ? .4 : FIX_SCALE;
+    const eff = {};
+    for (const [k, v] of Object.entries(base)) if (typeof v === 'number' && v) eff[k] = Math.sign(v) * Math.max(1, Math.round(Math.abs(v) * scale));
+    if (eff.money < 0 && by === 'auto') eff.money = -Math.min(-eff.money, 3000, Math.max(0, g.money)) || undefined;
+    if (eff.money === undefined) delete eff.money;
+    const main = staffById(ids[0]);
+    let ok = !!base.ok;
+    if (base.gamble && main) {
+        ok = chance(.35 + bossRel(main.id) / 300 + (main.serve + main.bake) / 40);
+        eff.rep = (eff.rep || 0) + (ok ? 1 : -1);
+        if (!eff.rep) delete eff.rep;
+    }
+    const ev = { kind: f.kind, staffIds: ids };
+    const delta = applyEff(g, eff, ev, null);
+    let exp = null;
+    if (ok && main && base.skill && by !== 'auto') { addExp(main, base.skill, 2); exp = { id: main.id, skill: base.skill, n: 2 }; }
+    const r = f.story?.res?.[ci] || {};
+    const result = (base.gamble && !ok && r.bad) ? r.bad : (r.t || '');
+    const label = fixChoiceLabel(f, ci);
+    const title = fixTitle(f);
+    for (const sid of f.staffIds) remember(sid, `${title} — ${label}${result ? ' — ' + result : ''}`);
+    if (PAIR_FIX(f.kind) && f.staffIds.length === 2 && r.memo) addRel(f.staffIds[0], f.staffIds[1], 0, r.memo);
+    // 감싸 준 일 → 며칠 뒤 터짐 (원래 규칙 그대로)
+    if (f.kind === 'friends' && base.gamble && !ok) g.pending.push({ a: f.staffIds[0], b: f.staffIds[1], day: g.day });
+    g.fixes.splice(i, 1);
+    const c0 = deltaChips(delta, ev, exp)[0];
+    const nm = book(f.staffIds[0])?.name || '';
+    const slid = by === 'auto' && base.slide;
+    const text = slid
+        ? F(L('사장님이 안 봐서 그냥 넘어갔어요 · {t}', 'You didn\'t look, so it slid by · {t}'), { t: title })
+        : by === 'auto' ? F(L('사장님이 안 봐서 {n} 알아서 했어요 · {t}', 'You didn\'t look, so {n} handled it · {t}'), { n: fillNames('{a이}', { a: nm }), t: title }) + (base.delegate ? '' : ` — ${label}`)
+            : by === 'delegate' ? F(L('수습함 · {t} — {n}에게 맡김 ({c})', 'Sorted out · {t} — left it to {n} ({c})'), { t: title, n: nm, c: label })
+                : F(L('수습함 · {t} — {c}', 'Sorted out · {t} — {c}'), { t: title, c: label });
+    const item = { t: '', k: by === 'auto' ? 'work' : 'boss', text, chip: c0?.t || '', good: !!c0?.good, sid: ids[0], boss: by !== 'auto', cc: c0 ? (c0.good ? 'up' : 'dn') : '' };
+    if (by !== 'auto') presentChunk(g).items.push(item);
+    return { f, ci, ids, delta, ok, uncertain: !!base.gamble, result, label, exp, item, by };
 }
 
 // ---------- 가게 로그 (사장님 있을 때·없을 때를 시간 덩어리로) ----------
