@@ -81,20 +81,15 @@ export function fixRoles(list, want, avoid = null) {
     const m = {};
     list.forEach(s => (m[s.id] = want[s.id] || 'floor'));
     if (list.length < 2) { list.forEach(s => (m[s.id] = 'all')); return m; }
-    const alls = list.filter(s => m[s.id] === 'all');
-    alls.slice(1).forEach(s => (m[s.id] = 'floor'));
-    if (alls.length) {
-        list.forEach(s => { if (s !== alls[0] && m[s.id] !== 'floor') m[s.id] = 'floor'; });
-        return m;
-    }
+    // 0.3.9b '전부'는 여러 명 가능, 다른 담당과 섞여도 됨
     for (const r of ['bake', 'serve']) {
         const has = list.filter(s => m[s.id] === r);
         has.slice(1).forEach(s => (m[s.id] = 'floor'));
-        if (has.length) continue;
+        if (has.length || list.some(s => m[s.id] === 'all')) continue;
         const free = list.filter(s => m[s.id] === 'floor').sort((a, b) => (a.id === avoid) - (b.id === avoid) || (r === 'bake' ? b.bake - a.bake : b.serve - a.serve));
         const other = list.find(s => m[s.id] === (r === 'bake' ? 'serve' : 'bake'));
         // 방금 홀로 보낸 사람밖에 없으면, 남은 자리 사람이 전부를 맡음 (직원 2명일 때)
-        if ((!free[0] || free[0].id === avoid) && other) { list.forEach(s => (m[s.id] = s === other ? 'all' : 'floor')); return m; }
+        if ((!free[0] || free[0].id === avoid) && other) { m[other.id] = 'all'; continue; }
         if (free[0]) m[free[0].id] = r;
     }
     return m;

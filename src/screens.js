@@ -118,17 +118,16 @@ ${workingStaff(g).length >= 2 ? '<section class="cr-card" id="cr-roles"></sectio
         el.innerHTML = `<div class="cr-ttl">👩‍🍳 ${L('오늘 담당', 'Today\'s posts')}${g.rolePick ? `<button type="button" class="cr-btn sm cr-roleAuto" data-m="roleAuto">${L('자동으로', 'Auto')}</button>` : `<small>${L('능력으로 정했어요', 'Set by skill')}</small>`}</div>` +
             w.map(s => `<div class="cr-roleRow"><div class="cr-roleWho">${faceChip(s.id, 30)}<b>${esc(book(s.id)?.name || '')}</b>${(book(s.id)?.tags || []).slice(0, 2).map(t => `<span class="cr-tag">${esc(tagLabel(t))}</span>`).join('')}${s.role !== rec[s.id] ? `<small class="cr-muted cr-roleRec">${L('추천', 'Suggested')}: ${roleWord(rec[s.id])}</small>` : ''}</div>` +
                 `<div class="cr-seg cr-roleSeg">${ROLES.map(([r, lb]) => `<button type="button" data-m="role" data-id="${esc(s.id)}" data-r="${r}" class="${s.role === r ? 'on' : ''}" aria-pressed="${s.role === r}">${lb}</button>`).join('')}</div></div>`).join('') +
-            `<div class="cr-muted cr-roleNote">🔥 ${L('오븐 — 재료가 떨어지면 청소·계산을 거들어요', 'Oven — helps clean and serve when stock runs out')}<br>🙌 ${L('전부 — 오븐·계산대 둘 다, 줄이 있으면 굽기를 미뤄요', 'All — oven and counter both; puts baking off while guests wait')}<br>${L('바꿀 때까지 내일도 이대로예요', 'Stays this way until you change it')}</div>`;
+            `<div class="cr-muted cr-roleNote">🔥 ${L('오븐 — 재료가 떨어지면 청소·계산을 거들어요', 'Oven — helps clean and serve when stock runs out')}<br>🙌 ${L('전부 — 오븐·계산대·홀 다 해요 (여러 명 가능)', 'All — oven, counter, and floor (more than one is fine)')}<br>${L('바꿀 때까지 내일도 이대로예요', 'Stays this way until you change it')}</div>`;
     };
     const spotOf = r => (r === 'bake' || r === 'all' ? sc.lay.spots.oven : r === 'serve' ? sc.lay.spots.counter : sc.lay.idle[0]);
     const setRole = (id, r) => {
         const cur = Object.fromEntries(w.map(s => [s.id, s.role]));
         if (cur[id] === r) return;
         const want = { ...cur };
-        if (r === 'all') w.forEach(s => (want[s.id] = 'floor'));
-        else if (r === 'bake' || r === 'serve') {
-            const holder = w.find(s => s.id !== id && (cur[s.id] === r || cur[s.id] === 'all'));
-            if (holder) want[holder.id] = cur[holder.id] === 'all' ? (r === 'bake' ? 'serve' : 'bake') : cur[id] === 'all' ? 'floor' : cur[id];
+        if (r === 'bake' || r === 'serve') { // 오븐·계산대는 한 명씩 → 그 자리 사람과 바꿈 ('전부'는 여러 명 가능)
+            const holder = w.find(s => s.id !== id && cur[s.id] === r);
+            if (holder) want[holder.id] = cur[id];
         }
         want[id] = r;
         g.rolePick = fixRoles(w, want, id);
@@ -429,7 +428,7 @@ function openScreen(box) {
         },
         async clean(s) {
             if (!stains.length) return false;
-            if (s.role !== 'floor' && !outOfStock(s) && !hasTag(s.id, 'neat', 'diligent') && stains.length < 4) return false;
+            if (s.role !== 'floor' && s.role !== 'all' && !outOfStock(s) && !hasTag(s.id, 'neat', 'diligent') && stains.length < 4) return false; // 0.3.9b 전부는 청소도
             const e = E(s);
             const st = stains.reduce((a, x) => (Math.abs(x.c - e.c) + Math.abs(x.r - e.r) < Math.abs(a.c - e.c) + Math.abs(a.r - e.r) ? x : a));
             setDoing(s, L('바닥 얼룩 치우러 가는 중', 'Going to wipe a spill'), 'move', L('청소하러', 'To a spill'));
@@ -463,7 +462,7 @@ function openScreen(box) {
         },
         async idle(s) {
             const e = E(s);
-            const home = outOfStock(s) ? (L0.idle[1] || L0.idle[0]) : s.role === 'bake' ? L0.spots.oven : s.role === 'serve' || s.role === 'all' ? L0.spots.counter : L0.idle[0];
+            const home = outOfStock(s) ? (L0.idle[1] || L0.idle[0]) : homeOf(s);
             if (!at(e, home)) await walk(s, home);
             if (s.role === 'bake' && g.ing <= 0) {
                 sc.emo(e, 'sweat'); setDoing(s, L('재료가 없어 한가함', 'Out of stock · nothing to bake'), 'bad', L('재료 없음', 'No stock')); if (chance(.15)) sc.say(e, line(s.id, 'soldout'), 1800);
@@ -692,7 +691,8 @@ ${B.backlog.map(x => `<div class="cr-whoRow">${faceChip(x.staffIds[0], 28)}<span
     biz.accN = biz.accN || 0;
     const mod = (s, k) => (biz.mods[s.id]?.[k] ?? 1) * ruleMul(g, s.id, k, { busy: !!t.crowd }); // 지시(그날) × 대책(며칠)
     const setMod = (s, k, v) => { (biz.mods[s.id] ??= {})[k] = v; };
-    const homeOf = s => (s.role === 'bake' ? L0.spots.oven : s.role === 'serve' || s.role === 'all' ? L0.spots.counter : L0.idle[0]);
+    // 0.3.9b '전부'가 여럿이면 두 번째부터는 진열대 앞에서 기다림 (계산대 칸에 겹치지 않게)
+    const homeOf = s => (s.role === 'bake' ? L0.spots.oven : s.role === 'serve' ? L0.spots.counter : s.role === 'all' ? (W.find(x => x.role === 'all' || x.role === 'serve') === s ? L0.spots.counter : L0.spots.display) : L0.idle[0]);
     const goalPos = (s, goal) => ({ oven: L0.spots.oven, counter: L0.spots.counter, display: L0.spots.display, tables: (L0.seats.find(x => x.g) || L0.seats[0])?.chat, home: homeOf(s) })[goal] || null;
     const nmOf = id => book(id)?.name || '';
     const K2 = (a, b) => [a, b];
