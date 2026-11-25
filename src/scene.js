@@ -181,10 +181,40 @@ export function createScene(host, opts = {}) {
         return e;
     };
     api.remove = e => { e.el.remove(); api.ents = api.ents.filter(x => x !== e); };
+    // 0.3.7 걷기는 직접 그림: 매 순간 화면 점에 딱 맞춰서 (글씨·몸이 번지거나 떨리지 않게)
+    // left/top은 도착할 자리, 지금 위치와의 차이는 translate로. 멈춰 있는 동안은 시간이 안 감.
+    const movers = new Set(); let raf = 0, lastT = 0;
+    const snapEnt = e => {
+        if (!e.el.isConnected) return;
+        const ox = e.ox || 0, oy = e.oy || 0;
+        e.el.style.translate = `${ox}px ${oy}px`;
+        const rc = e.el.getBoundingClientRect(), d = window.devicePixelRatio || 1;
+        const ax = (rc.x * d - Math.round(rc.x * d)) / d / Z, ay = (rc.y * d - Math.round(rc.y * d)) / d / Z;
+        if (Math.abs(ax) > .001 || Math.abs(ay) > .001) e.el.style.translate = `${ox - ax}px ${oy - ay}px`;
+    };
+    const snapAll = () => { for (const e of api.ents) if (!movers.has(e)) snapEnt(e); };
+    const tick = now => {
+        raf = 0;
+        const dt = lastT ? Math.min(100, now - lastT) : 0; lastT = now;
+        for (const e of movers) {
+            if (!api.paused) e.mt += dt;
+            const k = e.md ? Math.min(1, e.mt / e.md) : 1;
+            e.ox = (e.fx - e.tx) * (1 - k); e.oy = (e.fy - e.ty) * (1 - k);
+            snapEnt(e);
+            if (k >= 1) movers.delete(e);
+        }
+        if (movers.size && !api.dead) raf = requestAnimationFrame(tick); else lastT = 0;
+    };
     api.place = (e, c, r, dur, depth = c + r) => {
         const [x, y] = tileC(c, r);
-        e.el.style.transition = `left ${dur}s linear, top ${dur}s linear, opacity .5s`;
-        e.el.style.left = x + 'px'; e.el.style.top = (y - 64) + 'px'; e.el.style.zIndex = depth * 10 + 5;
+        const tx = x, ty = y - 64;
+        // 지금 그려진 자리에서 출발
+        const cx = (e.tx ?? tx) + (e.ox || 0), cy = (e.ty ?? ty) + (e.oy || 0);
+        e.el.style.transition = 'opacity .5s';
+        e.el.style.left = tx + 'px'; e.el.style.top = ty + 'px'; e.el.style.zIndex = depth * 10 + 5;
+        e.tx = tx; e.ty = ty; e.fx = cx; e.fy = cy; e.ox = cx - tx; e.oy = cy - ty; e.md = dur * 1000; e.mt = 0;
+        if (dur > 0) { movers.add(e); if (!raf) raf = requestAnimationFrame(tick); }
+        else { e.ox = e.oy = 0; movers.delete(e); requestAnimationFrame(() => snapEnt(e)); }
         e.c = c; e.r = r;
     };
 
@@ -333,7 +363,9 @@ export function createScene(host, opts = {}) {
         const w = WW * Z, h = WH * Z;
         px = w <= VW ? (VW - w) / 2 : Math.min(0, Math.max(VW - w, px));
         py = h <= VH ? (VH - h) / 2 : Math.min(0, Math.max(VH - h, py));
+        { const d = window.devicePixelRatio || 1; px = Math.round(px * d) / d; py = Math.round(py * d) / d; } // 0.3.7 장면도 점에 맞춤
         world.style.transform = `translate(${px}px,${py}px) scale(${Z})`;
+        if (world.classList.contains('smooth')) { clearTimeout(api._snapT); api._snapT = setTimeout(snapAll, 280); } else requestAnimationFrame(snapAll);
         zl.textContent = Math.round(Z * 100) + '%';
         if (opts.zoomKey && settings().rememberZoom) { const g = G(); if (g) { g.zoom[opts.zoomKey] = { Z, px, py }; save(); } }
     };
@@ -439,7 +471,7 @@ export function createScene(host, opts = {}) {
     // 끄는 중·확대 중엔 직원 누르기가 잘못 눌리지 않게
     scene.addEventListener('click', e => { if (dragged) { e.stopPropagation(); e.preventDefault(); dragged = false; } }, { capture: true, signal: ac.signal });
 
-    api.destroy = () => { api.dead = true; api.run++; ac.abort(); bigBox?.remove(); bigBox = null; host.innerHTML = ''; };
+    api.destroy = () => { api.dead = true; if (raf) cancelAnimationFrame(raf); api.run++; ac.abort(); bigBox?.remove(); bigBox = null; host.innerHTML = ''; };
 
     // 처음 보여줄 곳
     requestAnimationFrame(() => {

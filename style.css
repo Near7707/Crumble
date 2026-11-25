@@ -292,10 +292,8 @@ details.cr-card summary { cursor: pointer; font-weight: 700; font-size: 13px; }
 .cr-steam.on { opacity: 1; animation: cr-steam 1.6s ease-in-out infinite; }
 .cr-rain line { animation: cr-rain .6s linear infinite; }
 
-.cr-ent { position: absolute; width: 50px; height: 66px; margin-left: -25px; border: none; background: none; padding: 0; display: flex; flex-direction: column; align-items: center; animation: cr-bob 2.6s ease-in-out infinite; }
+.cr-ent { position: absolute; width: 50px; height: 66px; margin-left: -25px; border: none; background: none; padding: 0; display: flex; flex-direction: column; align-items: center; } /* 0.3.7 몸 흔들기 끔 (번짐·떨림) */
 button.cr-ent { cursor: pointer; }
-.cr-ent.cr-walk { animation: cr-stepb .28s ease-in-out infinite alternate; }
-.cr-ent.cr-work { animation: cr-nod 1s ease-in-out infinite; }
 .cr-ent.cr-jumping { animation: cr-jump .45s ease-out; }
 .cr-ent .cr-head { position: relative; z-index: 1; width: 32px; height: 32px; border-radius: 50%; border: 2.5px solid var(--cr-card); box-shadow: 0 0 0 1.5px var(--cr-brown); display: flex; align-items: center; justify-content: center; background-repeat: no-repeat; padding: 0; }
 .cr-ent .cr-ghead { width: 28px; height: 28px; background: #EBDCCB; }
