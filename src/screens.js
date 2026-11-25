@@ -306,9 +306,10 @@ function openScreen(box) {
             const e = E(s); B.ovenBy = s.id;
             setDoing(s, L('오븐 앞 · 굽는 중', 'Oven · baking'), 'focus', L('굽는 중', 'Baking'));
             await walk(s, L0.spots.oven); sc.emo(e, 'spark'); sc.work(e, true); sc.steam(true);
-            await sc.wait(Math.max(1800, 4400 - s.bake * 240) * fat(s));
+            await sc.wait(Math.max(1800, 3800 - s.bake * 200) * fat(s)); // 0.3.5 능력 1: 3.6초 → 10: 1.8초
             sc.work(e, false); sc.steam(false);
-            const pBurn = .2 - s.bake * .018 + (hasTag(s.id, 'clumsy') ? .08 : 0) + ((s.mood ?? 60) < 35 ? .06 : 0) + ((s.fatigue ?? 30) > 75 ? .05 : 0);
+            const pBurn = .14 - s.bake * .011 + // 0.3.5 능력 1: 13% → 10: 3%
+                 (hasTag(s.id, 'clumsy') ? .08 : 0) + ((s.mood ?? 60) < 35 ? .06 : 0) + ((s.fatigue ?? 30) > 75 ? .05 : 0);
             if (chance(Math.max(.02, pBurn))) {
                 const helper = friendSaves(g, biz, s.id);
                 if (helper) { sc.say(B.ents[helper] || e, line(helper, 'rescue'), 2200); sc.emo(e, 'heart'); news(F(L('{a} {b}의 실수를 막아 줬어요', '{a} saved {b}\'s batch'), { a: nmGa(helper), b: book(s.id)?.name }), 'good', '', true, undefined, helper); }
@@ -345,7 +346,7 @@ function openScreen(box) {
             await walk(s, L0.spots.counter);
             setDoing(s, L('계산대 · 주문 받는 중', 'Counter · taking orders'), 'work', helping ? L('거드는 중', 'Helping out') : L('주문 받는 중', 'Taking orders'));
             sc.work(e, true); sc.emo(e, null);
-            await sc.wait(Math.max(700, 2100 - s.serve * 120) * fat(s));
+            await sc.wait(Math.max(700, 1800 - s.serve * 100) * fat(s)); // 0.3.5 능력 1: 1.7초 → 10: 0.8초
             sc.work(e, false);
             let gaveFree = false;
             if (B.shelf > 0) {

@@ -177,8 +177,8 @@ Return JSON:
  "attitude": "attitude toward the boss and toward work",
  "examples": ["3 short example lines they might say at the shop"],
  "tags": ["2-3 tags chosen ONLY from: ${tagList}"],
- "bake": 2-8 (starting baking skill, judged from job/experience, NOT personality),
- "serve": 2-8 (starting customer-service skill, judged from job/experience, NOT personality),
+ "bake": 1-3 (starting baking skill, judged from job/experience, NOT personality: 1 = no related experience, 2 = some experience or a hobby, 3 = it is their actual job),
+ "serve": 1-3 (starting customer-service skill, judged from job/experience, NOT personality: 1 = no related experience, 2 = some experience, 3 = it is their actual job),
  "lines": { very short in-shop speech bubbles (max ~25 characters each) in THIS character's own voice and speech style,
    one string per key: ${FALLBACK_KEYS.map(k => `"${k}"`).join(', ')}
    (${FALLBACK_HINT}) }
@@ -197,8 +197,8 @@ Return JSON:
         tags: tags.length ? tags : ['diligent'],
         lines: cleanLines(j.lines),
         linesLang: AI_LANG(),
-        bake: Math.round(num(j.bake, 2, 8, 4)),
-        serve: Math.round(num(j.serve, 2, 8, 4)),
+        bake: Math.round(num(j.bake, 1, 3, 2)),
+        serve: Math.round(num(j.serve, 1, 3, 2)),
     };
 }
 

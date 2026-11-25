@@ -739,28 +739,27 @@ async function hireFlow(avatar) {
     pointsModal(avatar, ch.name, made);
 }
 
+// 0.3.5 시작 능력은 1~3 (카드의 직업·경력으로), 사장님 포인트 없음. 영업하면서 자람
+const START_MAX = 3;
+const startLv = v => clamp(Math.round(v ?? 2), 1, START_MAX);
 function pointsModal(avatar, name, made) {
-    const pts = { bake: 0, serve: 0 };
-    const draw = () => {
-        const left = 3 - pts.bake - pts.serve;
-        const row = (k, ko, en) => `<div class="cr-row cr-ptRow"><b>${L(ko, en)}</b><span class="cr-lv">Lv ${made['base' + (k === 'bake' ? 'Bake' : 'Serve')] + pts[k]}</span><span class="cr-stp" style="margin-left:auto"><button type="button" data-pt="${k}" data-d="-1" aria-label="-">−</button><button type="button" data-pt="${k}" data-d="1" aria-label="+" ${left <= 0 ? 'disabled' : ''}>+</button></span></div>`;
-        const m = openModal(`<div class="cr-mtitle">${esc(name)}<small>${esc(made.job || '')}</small></div>
+    const row = (k, ko, en) => `<div class="cr-row cr-ptRow"><b>${L(ko, en)}</b><span class="cr-lv" style="margin-left:auto">Lv ${startLv(made['base' + (k === 'bake' ? 'Bake' : 'Serve')] ?? made[k])}</span></div>`;
+    const m = openModal(`<div class="cr-mtitle">${esc(name)}<small>${esc(made.job || '')}</small></div>
 <div class="cr-tags">${(made.tags || []).map(t => `<span class="cr-tag">${esc(tagLabel(t))}</span>`).join('')}</div>
 <p class="cr-intro">${esc(made.intro || '')}</p>
-<div class="cr-card flat">${row('bake', '제빵', 'Baking')}${row('serve', '접객', 'Service')}<p class="cr-muted">${F(L('사장님 포인트 {n}개 남음 · 시작 능력은 카드의 직업·경력으로 정했어요', '{n} boss points left · starting skills come from the card\'s job/experience'), { n: left })}</p></div>
+<div class="cr-card flat">${row('bake', '제빵', 'Baking')}${row('serve', '접객', 'Service')}<p class="cr-muted">${L('시작 능력은 카드의 직업·경력으로 정했어요 (1~3). 영업하면서 자라요.', 'Starting skills come from the card\'s job/experience (1–3). They grow as you run the shop.')}</p></div>
 <div class="cr-actions"><button class="cr-btn" type="button" data-act="modalClose">${L('취소', 'Cancel')}</button><button class="cr-pbtn sm" type="button" data-act="hireOk">${L('고용하기', 'Hire')}</button></div>`);
-        m.querySelectorAll('[data-pt]').forEach(b => b.onclick = e => { e.stopPropagation(); const k = b.dataset.pt, d = +b.dataset.d; if (pts[k] + d < 0 || (d > 0 && left <= 0) || made['base' + (k === 'bake' ? 'Bake' : 'Serve')] + pts[k] + d > 10) return; pts[k] += d; draw(); });
-        m.querySelector('[data-act="hireOk"]').onclick = e => { e.stopPropagation(); doHire(avatar, made, pts); };
-    };
-    draw();
+    m.querySelector('[data-act="hireOk"]').onclick = e => { e.stopPropagation(); doHire(avatar, made); };
 }
 
-function doHire(avatar, made, pts) {
+function doHire(avatar, made) {
     const s = S(), g = G();
     if (g.staff.length >= MAX_STAFF) return;
     const { bake, serve, baseBake, baseServe, ...bk } = made;
-    s.staffBook[avatar] = { ...bk, avatar, baseBake: baseBake ?? bake, baseServe: baseServe ?? serve };
-    g.staff.push({ id: avatar, avatar, color: nextColor(), bake: clamp((baseBake ?? bake) + pts.bake, 1, 10), serve: clamp((baseServe ?? serve) + pts.serve, 1, 10), exp: { bake: 0, serve: 0 }, mood: 65, fatigue: 20, hiredDay: g.day, role: 'floor', absent: false });
+    // 예전 설명서(2~8)로 다시 고용해도 3까지로
+    const b0 = startLv(baseBake ?? bake), s0 = startLv(baseServe ?? serve);
+    s.staffBook[avatar] = { ...bk, avatar, baseBake: b0, baseServe: s0 };
+    g.staff.push({ id: avatar, avatar, color: nextColor(), bake: b0, serve: s0, exp: { bake: 0, serve: 0 }, mood: 65, fatigue: 20, hiredDay: g.day, role: 'floor', absent: false });
     rel('boss', avatar);
     assignRoles(g);
     logBoss(g, F(L('사장님이 {n} 님을 고용했어요', 'You hired {n}'), { n: made.name }));

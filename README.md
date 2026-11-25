@@ -18,7 +18,7 @@
 - **오늘은 여기까지.** 영업 중 ⏸로 멈추면 [🌙 오늘은 여기까지]로 일찍 문을 닫고 바로 마감 정산으로 갈 수 있어요. 손님을 덜 받은 만큼 매출은 줄고 월급은 그대로예요.
 - **말투 샘플.** 직원 설명서에 RP 속 실제 대사를 넣으면 그 말투를 따라 해요. 다른 언어로 적어도 느낌만 살려 옮겨요.
 - **사장님이 없을 때도 가게는 돌아가요.** 창을 닫아 두면 8시간(설정)마다 직원들끼리 하루를 영업하고, 다시 켜면 그동안 있었던 일이 **가게 로그**에 정리돼 있어요 (최대 3일치). 가게 로그에는 사장님이 있을 때·없을 때 일이 시간 덩어리로 쌓이고, 손님·매출·새는 돈도 같이 보여요. 그보다 짧게 창을 30분 넘게 닫아 두면 작은 일이 쌓이고, 영업 중에 1시간 넘게 비우면 밀린 일이 기다리고 있어요. 자리 비운 사이에 망하지는 않아요.
-- **능력과 성격은 따로.** 제빵·접객 능력은 자라지만 성격은 카드 그대로예요. 유능한 직원도 사고를 칠 수 있어요.
+- **능력과 성격은 따로.** 제빵·접객 능력은 카드의 직업·경력으로 1~3에서 시작해서 영업하면서 자라지만, 성격은 카드 그대로예요. 유능한 직원도 사고를 칠 수 있어요.
 - **친해진다고 쉬워지지 않아요.** 관계는 대사와 태도를 바꾸지만 숫자 보너스는 없어요.
 - **결재함**: 신메뉴 제안, 불만, 급전 대출 같은 큰 결정은 최대 3개까지 쌓여요.
 - **폐업**: 빚진 채로 영업한 날이 3일 쌓이면 문을 닫아요. 직원들의 마지막 한마디와 폐업 일지가 남고, 새 가게를 열 수 있어요.
@@ -95,7 +95,7 @@ A shop-management extension for SillyTavern: characters from your character card
 - **Call it a day.** Pause with ⏸ during business and tap [🌙 Call it a day] to close early and go straight to closing up. You serve fewer guests, so sales drop, but wages stay the same.
 - **Voice samples.** Paste real roleplay lines into a staff manual and they'll talk like that — in any language, the feel carries over.
 - **The shop runs while you're away.** With the window closed, the staff run a day on their own every 8 hours (adjustable), and a **shop log** of what happened is waiting when you come back (up to 3 days). The shop log groups what happened with you and without you into blocks of time, with guests, sales and leaked money. For shorter breaks, closing the window for 30+ minutes lets small things happen, and stepping away for an hour during business leaves a backlog waiting for you. The shop can't go bankrupt while you're gone.
-- **Skills ≠ personality.** Baking and service grow; personality stays true to the card. Even a pro can cause trouble.
+- **Skills ≠ personality.** Baking and service start at 1–3 based on the card's job and experience and grow as you run the shop; personality stays true to the card. Even a pro can cause trouble.
 - **Friendship doesn't make it easy.** Bonds change dialogue and attitude, never the numbers.
 - **Inbox**: big decisions — new menu ideas, complaints, emergency loans — pile up (max 3).
 - **Closing down**: three business days in debt and the shop closes. Your staff say their last words, a closing log is kept, and you can open a new shop.
