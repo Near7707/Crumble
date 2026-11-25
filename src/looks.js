@@ -19,8 +19,30 @@ export function bossUrl() {
     return f ? 'User Avatars/' + encodeURIComponent(f) : '';
 }
 export const BOSS_FACE0 = { z: 1, x: 50, y: 40 };
-export function bossFaceStyle(url = bossUrl()) {
-    const f = S().bossFace || BOSS_FACE0;
+// 0.3.3 위치는 사진마다 따로: 'upload' / 'persona:파일이름'
+export function bossFaceKey() {
+    const s = S();
+    if (s.bossPhoto === 'upload') return 'upload';
+    const f = personaAvatarFile();
+    return f ? 'persona:' + f : '';
+}
+export function getBossFace() {
+    const s = S(), k = bossFaceKey();
+    if (!k) return BOSS_FACE0;
+    s.bossFaces ??= {};
+    // 0.3.1 때 하나뿐이던 값은 지금 사진 것으로 옮김 (한 번만)
+    if (s.bossFace) { if (!s.bossFaces[k]) s.bossFaces[k] = s.bossFace; s.bossFace = null; }
+    return s.bossFaces[k] || BOSS_FACE0;
+}
+export function setBossFace(f) {
+    const s = S(), k = bossFaceKey(); if (!k) return;
+    s.bossFaces ??= {};
+    delete s.bossFaces[k];
+    s.bossFaces[k] = { z: Math.round(f.z * 100) / 100, x: Math.round(f.x), y: Math.round(f.y) };
+    const keys = Object.keys(s.bossFaces); // 너무 많이 쌓이지 않게 (오래된 것부터 지움)
+    while (keys.length > 30) delete s.bossFaces[keys.shift()];
+}
+export function bossFaceStyle(url = bossUrl(), f = getBossFace()) {
     return `background-color:#E6DCF2;background-image:url('${url.replace(/'/g, '%27')}');background-size:${Math.round(100 * f.z)}% auto;background-position:${f.x}% ${f.y}%`;
 }
 /** 사장 얼굴 동그라미 (사진이 없으면 👑) */

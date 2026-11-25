@@ -1,10 +1,10 @@
 // 설정 칸 — 확장 설정 칸(panel)과 게임 창 안(game) 두 곳에서 같은 값을 고친다.
 // 한쪽에서 바꾸면 onSettings 로 알려서 다른 쪽도 바로 다시 그린다.
-import { esc, ctx } from './util.js';
+import { esc, ctx, clamp } from './util.js';
 import { S, save, ensureGame, shopName } from './state.js';
 import { L, resetLang } from './i18n.js';
 import { getProfiles } from './ai.js';
-import { bossFace, bossUrl, personaAvatarFile, bossFaceStyle, BOSS_FACE0 } from './looks.js';
+import { bossFace, bossUrl, personaAvatarFile, bossFaceStyle, BOSS_FACE0, getBossFace, setBossFace, bossFaceKey } from './looks.js';
 
 const listeners = [];
 /** fn(key, scope) — scope: 'panel' | 'game' (어디서 바꿨는지) */
@@ -112,11 +112,11 @@ function bossPhotoInner(game) {
     const note = src === 'none' ? L('사진 없음 · 👑로 보여요', 'No photo · shows 👑')
         : src === 'upload' ? (s.bossImg ? L('올린 사진 · 확장 설정에만 저장돼요', 'Uploaded photo · saved only in the extension settings') : L('올린 사진이 없어요 · 👑로 보여요', 'No uploaded photo · shows 👑'))
             : personaAvatarFile() ? L('지금: 페르소나 사진 · 페르소나를 바꾸면 따라가요', 'Now: persona avatar · follows your persona') : L('페르소나 사진을 못 찾았어요 · 👑로 보여요', 'Couldn\'t find a persona avatar · shows 👑');
-    const f = s.bossFace || BOSS_FACE0;
     const edit = bpEditOpen && has ? `<div class="cr-bpEdit">
-<label>${L('확대', 'Zoom')}<input type="range" min="100" max="300" step="5" data-bpk="z" value="${Math.round(f.z * 100)}"></label>
-<label>${L('좌우', 'Left/right')}<input type="range" min="0" max="100" data-bpk="x" value="${f.x}"></label>
-<label>${L('위아래', 'Up/down')}<input type="range" min="0" max="100" data-bpk="y" value="${f.y}"></label></div>` : '';
+<div class="cr-facePrev"><div class="cr-faceBig cr-bpBig"></div><div class="cr-faceSmall cr-bpSmall"></div></div>
+<p class="cr-bpHint">${L('동그라미 안을 끌어서 옮겨요 · 두 손가락이나 휠로 확대', 'Drag inside the circle · pinch or scroll to zoom')}</p>
+<label>${L('확대', 'Zoom')}<input type="range" min="100" max="400" step="5" data-bpk="z"></label>
+<div class="cr-bpDone"><button type="button" class="cr-bp${game ? '' : ' menu_button'}" data-bp="reset">${L('처음대로', 'Reset')}</button><button type="button" class="cr-bp on${game ? '' : ' menu_button'}" data-bp="adjust">${L('다 맞췄어요', 'Done')}</button></div></div>` : '';
     return `${bossFace(54)}<div style="flex:1;min-width:0"><div class="cr-bpBtns">${btn('persona', L('페르소나 사진', 'Persona avatar'), src === 'persona')}${btn('upload', L('사진 올리기', 'Upload photo'), src === 'upload' && !!s.bossImg)}${btn('adjust', L('위치 맞추기', 'Adjust'), bpEditOpen && has, !has)}${btn('none', L('지우기', 'Remove'), src === 'none')}</div>
 <small class="cr-bpNote">${note}</small>${edit}</div><input type="file" accept="image/*" data-bpfile hidden>`;
 }
@@ -137,32 +137,73 @@ function shrinkImage(file) {
 function bindBossPhoto(box, scope) {
     const host = box.querySelector('[data-bossphoto]'); if (!host) return;
     const game = scope === 'game', s = S();
-    const redraw = () => { host.innerHTML = bossPhotoInner(game); };
+    let f = null, fKey = '', dirty = false; // 맞추는 중인 값 (어느 사진 것인지)
+    const paint = (edit = true) => {
+        if (edit && f) dirty = true;
+        const st = bossFaceStyle(bossUrl(), f || getBossFace());
+        const face = host.querySelector('.cr-face.photo'); if (face) face.style.cssText = `width:54px;height:54px;${st}`;
+        host.querySelectorAll('.cr-bpBig, .cr-bpSmall').forEach(x => { x.style.cssText = st; });
+        const z = host.querySelector('[data-bpk=z]'); if (z && f) z.value = Math.round(f.z * 100);
+    };
+    const bindEdit = () => {
+        const big = host.querySelector('.cr-bpBig'); if (!big) return;
+        f = { ...getBossFace() }; fKey = bossFaceKey();
+        paint(false); dirty = false;
+        // 끌기 + 두 손가락 확대 (직원 얼굴 맞추기와 같은 느낌)
+        const pts = new Map(); let drag = null, pinch = null;
+        big.addEventListener('pointerdown', e => {
+            e.preventDefault(); big.setPointerCapture(e.pointerId);
+            pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+            if (pts.size === 1) drag = { x: e.clientX, y: e.clientY, fx: f.x, fy: f.y };
+            if (pts.size === 2) { const [a, b] = [...pts.values()]; pinch = { d: Math.hypot(a.x - b.x, a.y - b.y) || 1, z: f.z }; drag = null; }
+        });
+        big.addEventListener('pointermove', e => {
+            if (!pts.has(e.pointerId)) return;
+            pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+            if (pinch && pts.size >= 2) { const [a, b] = [...pts.values()]; f.z = clamp(pinch.z * (Math.hypot(a.x - b.x, a.y - b.y) / pinch.d), 1, 4); paint(); return; }
+            if (!drag) return;
+            const k = 100 / (big.clientWidth * Math.max(.2, f.z - 1 + .3));
+            f.x = clamp(drag.fx - (e.clientX - drag.x) * k, 0, 100); f.y = clamp(drag.fy - (e.clientY - drag.y) * k, 0, 100); paint();
+        });
+        const up = e => {
+            pts.delete(e.pointerId);
+            if (pts.size < 2) pinch = null;
+            if (pts.size === 1) { const [p] = [...pts.values()]; drag = { x: p.x, y: p.y, fx: f.x, fy: f.y }; }
+            if (!pts.size) { drag = null; commit(); }
+        };
+        big.addEventListener('pointerup', up); big.addEventListener('pointercancel', up);
+        big.addEventListener('wheel', e => { e.preventDefault(); f.z = clamp(f.z * (e.deltaY < 0 ? 1.08 : 1 / 1.08), 1, 4); paint(); clearTimeout(big._t); big._t = setTimeout(commit, 250); }, { passive: false });
+    };
+    // 맞추는 사이 페르소나가 바뀌었으면 다른 사진에 저장하지 않음
+    const commit = () => { if (!f || !dirty || fKey !== bossFaceKey()) return; setBossFace(f); dirty = false; save(); emitSettings('bossPhoto', scope); };
+    const redraw = () => { f = null; host.innerHTML = bossPhotoInner(game); bindEdit(); };
     const changed = () => { save(); redraw(); emitSettings('bossPhoto', scope); };
     host.addEventListener('click', e => {
         const b = e.target.closest('[data-bp]'); if (!b || b.disabled) return;
         e.preventDefault();
         const k = b.dataset.bp;
-        if (k === 'persona') { s.bossPhoto = 'persona'; s.bossFace = null; changed(); }
+        if (k === 'persona') { s.bossPhoto = 'persona'; changed(); }
         else if (k === 'none') { s.bossPhoto = 'none'; bpEditOpen = false; changed(); }
         else if (k === 'upload') host.querySelector('[data-bpfile]')?.click();
-        else if (k === 'adjust') { bpEditOpen = !bpEditOpen; redraw(); }
+        else if (k === 'adjust') { if (bpEditOpen) commit(); bpEditOpen = !bpEditOpen; redraw(); }
+        else if (k === 'reset') { f = { ...BOSS_FACE0 }; paint(); commit(); }
     });
     host.addEventListener('change', async e => {
         if (!e.target.matches('[data-bpfile]')) return;
         const file = e.target.files?.[0]; if (!file) return;
-        try { s.bossImg = await shrinkImage(file); s.bossPhoto = 'upload'; s.bossFace = null; changed(); }
-        catch { host.querySelector('.cr-bpNote').textContent = L('이 사진은 열 수 없어요', 'Couldn\'t open that image'); }
+        try {
+            s.bossImg = await shrinkImage(file); s.bossPhoto = 'upload';
+            if (s.bossFaces) delete s.bossFaces.upload; // 새 사진은 처음 위치부터
+            bpEditOpen = true; // 올리면 바로 위치 맞추기
+            changed();
+        } catch { host.querySelector('.cr-bpNote').textContent = L('이 사진은 열 수 없어요', 'Couldn\'t open that image'); }
     });
     host.addEventListener('input', e => {
-        const k = e.target.dataset?.bpk; if (!k) return;
-        const f = { ...(s.bossFace || BOSS_FACE0) };
-        f[k] = k === 'z' ? +e.target.value / 100 : +e.target.value;
-        s.bossFace = f;
-        const face = host.querySelector('.cr-face.photo'); if (face) face.style.cssText = `width:54px;height:54px;${bossFaceStyle()}`;
-        save();
+        if (e.target.dataset?.bpk !== 'z' || !f) return;
+        f.z = +e.target.value / 100; paint();
     });
-    host.addEventListener('change', e => { if (e.target.dataset?.bpk) emitSettings('bossPhoto', scope); });
+    host.addEventListener('change', e => { if (e.target.dataset?.bpk) commit(); });
+    bindEdit();
 }
 
 /** 설정 칸 안의 입력들에 바꾸기 연결 */
