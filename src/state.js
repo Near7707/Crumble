@@ -18,7 +18,7 @@ export const STAFF_COLORS = [
 export const MAX_STAFF = 4;
 export const MAX_INBOX = 3;
 export const WAGE = 12000;
-export const ING_PRICE = 900;
+export const ING_PRICE = 1200; // 0.3.8 900 → 1200
 export const START_MONEY = 60000;
 
 export const menuInfo = id => MENU_POOL.find(m => m.id === id) || MENU_POOL[0];

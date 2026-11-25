@@ -41,6 +41,26 @@ export const repTier = rep => (rep < 35 ? 'low' : rep < 65 ? 'mid' : 'high');
 export const workingStaff = g => g.staff.filter(s => !s.absent);
 
 // ---------- 역할: 능력이 높은 쪽으로 ----------
+/**
+ * 0.3.8 마감 때 가게 로그로 옮길 소식 줄 고르기.
+ * 사장님 지시(👑)·이어지는 일은 항상 남기고, 나머지는 최근 것으로 채움 (전체 약 14줄).
+ * 이어지는 일은 원래 지시 줄 바로 아래로 옮김.
+ */
+export function logNews(news) {
+    const list = news.filter(n => !String(n.key).startsWith('ev'));
+    const keep = new Set(list.filter(n => n.boss || n.follow));
+    const others = list.filter(n => !keep.has(n));
+    others.slice(-Math.max(6, 14 - keep.size)).forEach(n => keep.add(n));
+    const picked = list.filter(n => keep.has(n));
+    const out = picked.filter(n => !(n.follow && n.ref && picked.some(b => b.oid === n.ref)));
+    for (const f of picked) {
+        if (!(f.follow && f.ref)) continue;
+        const i = out.findIndex(b => b.oid === f.ref); if (i < 0) continue;
+        let j = i + 1; while (j < out.length && out[j].follow && out[j].ref === f.ref) j++;
+        out.splice(j, 0, f);
+    }
+    return out;
+}
 export function assignRoles(g) {
     const list = workingStaff(g);
     list.forEach(s => (s.role = 'floor'));
@@ -670,8 +690,8 @@ export function closeDay(g, biz) {
     const leak = Math.round(((biz.eaten || 0) + (biz.freebie || 0) + (biz.left || 0)) * avg + (biz.burnt || 0) * ING_PRICE);
     const ch = presentChunk(g);
     ch.stats = { guests: biz.served, sales: biz.revenue, leak };
-    ch.items.push(...(biz.news || []).filter(n => !String(n.key).startsWith('ev')).slice(-14)
-        .map(n => ({ t: n.t, k: n.k, text: n.text, chip: n.chip || '', good: !!n.good, sid: n.sid || null, boss: !!n.boss, follow: !!n.follow, cc: n.cc || '' })));
+    ch.items.push(...logNews(biz.news || [])
+        .map(n => ({ t: n.t, k: n.k, text: n.text, chip: n.chip || '', good: !!n.good, sid: n.sid || null, boss: !!n.boss, follow: !!n.follow, cc: n.cc || '', cause: n.cause || '' })));
     ch.items.push(...hrItems.map(x => ({ t: L('마감', 'Close'), k: x.k, text: x.text, chip: x.chip, good: !!x.good, sid: x.sid || null, boss: !!x.boss, cc: x.cc || '' })));
     for (const l of biz.log) if (l.delta?.rep >= 5 || l.delta?.rep <= -5 || ['reviewer', 'group', 'fight', 'inspection'].includes(l.kind)) g.stats.memorable.push({ day: g.day, title: l.title, text: l.result || l.line || l.choice });
     if (g.stats.memorable.length > 30) g.stats.memorable.splice(0, g.stats.memorable.length - 30);

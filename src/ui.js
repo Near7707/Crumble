@@ -452,7 +452,7 @@ function chunkStats(c) {
 function logItem(it) {
     const face = it.boss ? bossFace(24) : it.sid && staffById(it.sid) ? faceChip(it.sid, 24) : '<span class="cr-face blank"></span>';
     const cc = it.cc || (it.boss ? 'boss' : it.good ? 'up' : 'dn');
-    return `<div class="cr-lgRow${it.boss ? ' boss' : ''}${it.follow ? ' follow' : ''}">${it.follow ? '<span class="cr-lgArrow" aria-hidden="true">↳</span>' : ''}<time>${esc(it.t || '')}</time>${face}<span class="cr-lgText"><span class="cr-nd ${esc(it.k || 'work')}"></span>${esc(it.text)}</span>${it.chip ? `<span class="cr-chip ${esc(cc)}">${esc(it.chip)}</span>` : ''}</div>`;
+    return `<div class="cr-lgRow${it.boss ? ' boss' : ''}${it.follow ? ' follow' : ''}">${it.follow ? '<span class="cr-lgArrow" aria-hidden="true">↳</span>' : ''}<time>${esc(it.t || '')}</time>${face}<span class="cr-lgText"><span class="cr-nd ${esc(it.k || 'work')}"></span>${esc(it.text)}${it.cause ? `<small class="cr-cause">${esc(it.cause)}</small>` : ''}</span>${it.chip ? `<span class="cr-chip ${esc(cc)}">${esc(it.chip)}</span>` : ''}</div>`;
 }
 function shopLogHtml(g) {
     view.logBase ??= g.logSeenAt || 0;

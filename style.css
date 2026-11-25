@@ -483,6 +483,7 @@ button.cr-ent { cursor: pointer; }
 .cr-lgRow time { flex: none; width: 36px; font-size: 11px; color: var(--cr-sub); }
 .cr-lgRow .cr-face.blank, .cr-lgRow .cr-face.boss { width: 24px; height: 24px; font-size: 12px; }
 .cr-lgText { flex: 1; min-width: 0; }
+.cr-cause { display: block; font-size: 10.5px; color: var(--cr-sub); margin-top: 1px; } /* 0.3.8 이어지는 일의 원인 */
 .cr-lgText .cr-nd { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 5px; vertical-align: 1px; background: #B9A894; }
 .cr-lgText .cr-nd.focus { background: var(--cr-coral); }
 .cr-lgText .cr-nd.work, .cr-lgText .cr-nd.good { background: #6DB56B; }
