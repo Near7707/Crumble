@@ -6,7 +6,7 @@ import {
     prepToday, expectedGuests, ingCost, pickEvents, fallbackEventText, resolveEvent, deltaText, newBiz, sellOne,
     closeDay, worries, finishClose, applyNotices, workingStaff, hasTag, friendSaves, EVENT_KINDS, guestMult,
     roleLabel, weatherLabel, staffPick, delegateIndex, canDelegate, pickReason, deltaChips, tagLabel,
-    applyEff, avgPrice,
+    applyEff, avgPrice, staffRest,
 } from './rules.js';
 import { ACC, REACT, FOLLOW, FOLLOW_OF, pickReaction, followChance, MAX_ACC_PER_DAY, MAX_FOLLOW_PER_DAY, accText, moodLabel } from './orders.js';
 import { createScene } from './scene.js';
@@ -204,6 +204,8 @@ const agoText = m => (m >= 90 ? F(L('{n}시간 전', '{n}h ago'), { n: Math.roun
 export const iga = n => { const c = String(n || '').trim().slice(-1).charCodeAt(0); if (!(c >= 0xAC00 && c <= 0xD7A3)) return L('가', ''); return L((c - 0xAC00) % 28 ? '이' : '가', ''); };
 /** 영업 중 창을 오래 닫아 뒀을 때: 밀린 일 쌓기 (몇 개 쌓였는지 돌려줌) */
 export function addBacklog(minutes) { return B?.addBacklog ? B.addBacklog(minutes) : 0; }
+/** 0.3.6 사장님이 오래 비웠을 때: 직원들이 그날 영업을 마저 하고 문 닫음 → 마감 정산 화면 */
+export function staffCloseBusiness() { return B?.staffClose ? (B.staffClose(), true) : false; }
 
 // ======================= ② 영업 중 =======================
 function openScreen(box) {
@@ -920,7 +922,12 @@ ${ruleChip(sid, A.kind)}
     const finish = async (early = false) => {
         B.running = false;
         biz.finished = true;
-        if (early) {
+        if (early === 'staff') {
+            // 0.3.6 사장님이 오래 비움: 멈춘 시각부터 직원들끼리 마저 영업
+            const r = staffRest(g, biz, Math.max(0, 1 - B.elapsed / D));
+            biz.staffAt = clockStr(true);
+            biz.news.push({ t: clockStr(), at: B.elapsed, k: 'work', text: F(L('사장님이 자리를 비워서 직원들끼리 마저 영업했어요 · {t}부터 · 손님 {n}명', 'You were away, so the staff ran the rest of the day · from {t} · {n} guests'), { t: biz.staffAt, n: r.n }), chip: r.sales ? '+' + money(r.sales) : '', good: true, key: 'staffRest', sid: null });
+        } else if (early) {
             // 일찍 닫기: 닫은 시각을 남겨 마감 화면·결과 카드에 보여 줌. 가게 로그에는 사장님 줄로.
             biz.earlyAt = clockStr(true);
             biz.news.push({ t: clockStr(), at: B.elapsed, k: 'boss', text: F(L('사장님이 일찍 문을 닫았어요 · {t}', 'You closed early · {t}'), { t: biz.earlyAt }), chip: '', good: false, key: 'early', sid: null, boss: true });
@@ -933,11 +940,20 @@ ${ruleChip(sid, A.kind)}
         B.backlog = [];
         t.events.filter(x => !x.done).forEach(x => (x.done = { skipped: true }));
         sc.setEnv({ tod: 'eve', weather: g.weather }); sc.sign('CLOSED');
-        toast(early ? L('일찍 문을 닫았어요', 'Closed early') : L('저녁 8시, 영업 끝!', '8 PM — closing time!'), 1800);
-        try { await new Promise(r => setTimeout(r, 1400)); } catch { /* */ }
+        toast(early === 'staff' ? L('직원들이 마저 영업하고 문을 닫았어요', 'The staff finished the day and closed up') : early ? L('일찍 문을 닫았어요', 'Closed early') : L('저녁 8시, 영업 끝!', '8 PM — closing time!'), 1800);
+        if (early !== 'staff') { try { await new Promise(r => setTimeout(r, 1400)); } catch { /* */ } }
         closeDay(g, biz);
         B = null;
         render();
+    };
+
+    B.staffClose = () => {
+        if (!B || !B.running || B.closing) return;
+        B.closing = true;
+        closeSheet();
+        B.sheetEv = null; B.resultOpen = false;
+        if (B.acc) B.acc.open = false;
+        finish('staff');
     };
 
     // 🌙 오늘은 여기까지 (멈춤 띠 안 버튼): 물어보고 바로 마감 정산으로. 손님을 덜 받은 만큼 매출만 줄고 월급은 그대로.
@@ -1000,6 +1016,7 @@ function closeScreen(box) {
     box.innerHTML = `${bizHead('close', { moneyHtml: `<span class="cr-money${g.money < 0 ? ' neg' : ''}">💰 ${money(g.money)}</span>`, clock: biz.earlyAt || L('저녁 8:00', '8:00 PM'), fill: 100 })}${bizTabs()}
 <main class="cr-main" data-biz>
 <div class="cr-sceneHost" id="cr-cScene"></div>
+${biz.staffAt ? `<div class="cr-resNote">🌙 ${F(L('사장님이 오래 자리를 비워서 {t}부터는 직원들끼리 마저 영업하고 문을 닫았어요.', 'You were away a long time, so from {t} the staff ran the shop themselves and closed up.'), { t: esc(biz.staffAt) })}</div>` : ''}
 <section class="cr-card"><div class="cr-ttl">💰 ${L('오늘 번 돈', 'Today\'s earnings')}<small>${F(L('{n}일째', 'Day {n}'), { n: g.day })}</small></div>
 <b class="cr-big ${net < 0 ? 'neg' : 'pos'}">${signedMoney(net)}</b>
 <div class="cr-line"><span>${F(L('매출 (손님 {n}명)', 'Sales ({n} guests)'), { n: biz.served })}</span><b>${signedMoney(biz.revenue)}</b></div>
@@ -1090,8 +1107,9 @@ ${diary ? `<p class="cr-diary">“${esc(diary)}”</p>` : (t.diaryError || t.dia
         if (b.dataset.c === 'find') { const en = ents[b.dataset.id]; if (en && en.el.style.opacity !== '0') { sc.focus(en, 1.4); en.onTap(en); } }
         if (b.dataset.c === 'log' || b.dataset.c === 'end') {
             finishClose(g);
-            if (b.dataset.c === 'log' && g.phase === 'done') { import('./ui.js').then(m => { m.view.tab = 'journal'; m.view.journal = 'this'; render(); }); return; }
+            if (b.dataset.c === 'log' && g.phase === 'done') { import('./ui.js').then(m => { m.view.tab = 'journal'; m.view.journal = 'this'; render(); m.afterClose(); }); return; }
             render();
+            import('./ui.js').then(m => m.afterClose()); // 0.3.6 오래 비운 나머지 시간은 직원들끼리
         }
     });
 }

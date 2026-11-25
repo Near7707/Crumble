@@ -13,7 +13,7 @@ import { faceChip, faceStyle, ICON, bossFace } from './looks.js';
 import { createScene } from './scene.js';
 import { awayJournal, makeManual, FALLBACK_KEYS, bossLabel, remakeLines, cardExampleLines } from './ai.js';
 import { line, tapLine } from './lines.js';
-import { renderBusiness, resumeIfNeeded, businessActive, pauseBusiness, bizPaused, addBacklog } from './screens.js';
+import { renderBusiness, resumeIfNeeded, businessActive, pauseBusiness, bizPaused, addBacklog, staffCloseBusiness } from './screens.js';
 import { fieldsHtml, bindFields, onSettings, personaName, setBossName, setShopName } from './settings.js';
 import { renderEnding } from './ending.js';
 import { hrAction, ruleCardHtml } from './hrui.js';
@@ -167,7 +167,7 @@ document.addEventListener('visibilitychange', () => {
     // 창을 열어 둔 채 폰을 잠갔다가 돌아왔을 때도 같은 규칙
     const away = minutesAway();
     markSeen();
-    if (businessActive()) { addBacklog(away); return; }
+    if (businessActive()) { bizAway(away); return; }
     if (BIZ.includes(G()?.phase)) return;
     const days = catchUp(away);
     const short = !days && G() ? shortAway(G(), away) : null;
@@ -183,7 +183,13 @@ export async function openWindow() {
     view.open = true;
     const away = minutesAway();
     markSeen();
-    if (businessActive()) { addBacklog(away); return; } // 멈춰 둔 영업 화면 그대로 (오래 비웠으면 밀린 일)
+    if (businessActive()) { bizAway(away); return; } // 멈춰 둔 영업 화면 그대로 (비웠으면 밀린 일, 아주 오래면 직원들이 마저 하고 닫음)
+    // 0.3.6 실리태번을 껐다 켜서 영업 화면이 사라졌을 때도 같은 규칙 (영업은 처음부터 다시 시작한 뒤)
+    if (G()?.phase === 'open') {
+        render();
+        bizAway(away);
+        return;
+    }
     const days = catchUp(away);
     // 날이 안 바뀌었어도 창을 오래 닫아 뒀으면 작은 일 몇 개 (문 열기 전·마감 후만)
     const short = !days ? shortAway(G(), away) : null;
@@ -204,6 +210,22 @@ export function closeWindow() {
     view.logBase = undefined; // 다음에 열 때 "새 일" 기준을 다시 잡음
     if (businessActive()) { bizAutoPaused = false; pauseBusiness(true); return; } // 장면은 그대로 두고 멈춤 (다시 열면 "멈춤" 띠)
     killScenes();
+}
+
+// 0.3.6 영업 중에 비웠을 때: 하루 영업 시간(기본 8시간)보다 짧으면 밀린 일, 길면 직원들이 마저 하고 닫음 → 마감 정산 화면.
+// 남은 시간은 마감하고 나서(afterClose) 평소처럼 직원들끼리 하루씩.
+function bizAway(away) {
+    const per = Math.max(1, +S().autoDayHours || 8) * 60;
+    if (away >= per && staffCloseBusiness()) { G().awayRest = Math.round(away - per); save(); return; }
+    addBacklog(away);
+}
+export function afterClose() {
+    const g = G(); if (!g || g.phase !== 'done') return;
+    const rest = +g.awayRest || 0;
+    if (!rest) return;
+    g.awayRest = 0; save();
+    const days = catchUp(rest);
+    if (days) { render(); runAway(days); }
 }
 
 // 잠깐 비운 일지는 AI를 하루 3번까지만 (넘으면 기본 글)
@@ -400,7 +422,7 @@ function dayResultHtml(g) {
         .map((n, i) => ({ ...n, i })).sort((a, b) => rank(a) - rank(b) || b.i - a.i)
         .filter(n => { const k = String(n.key).replace(/[^a-z]/gi, '').slice(0, 5); if (seen.has(k)) return false; seen.add(k); return true; })
         .slice(0, 3).sort((a, b) => a.i - b.i);
-    return `<section class="cr-card cr-dayRes"><div class="cr-ttl">🌙 ${F(L('{n}일째 영업 결과', 'Day {n} results'), { n: g.day })}<small>${t.biz?.earlyAt ? F(L('일찍 닫음 · {t}', 'Closed early · {t}'), { t: t.biz.earlyAt }) : L('오늘 영업 끝', 'Closed for today')}</small></div>
+    return `<section class="cr-card cr-dayRes"><div class="cr-ttl">🌙 ${F(L('{n}일째 영업 결과', 'Day {n} results'), { n: g.day })}<small>${t.biz?.earlyAt ? F(L('일찍 닫음 · {t}', 'Closed early · {t}'), { t: t.biz.earlyAt }) : t.biz?.staffAt ? F(L('{t}부터 직원들끼리', 'Staff on their own from {t}'), { t: t.biz.staffAt }) : L('오늘 영업 끝', 'Closed for today')}</small></div>
 <b class="cr-big ${net < 0 ? 'neg' : 'pos'}">${signedMoney(net)}</b>
 <div class="cr-chips"><span class="cr-chip">${L('손님', 'Guests')} <b>${sum.served ?? 0}</b></span><span class="cr-chip ${repD >= 0 ? 'good' : 'warn'}">${L('평판', 'Rep')} <b>${Math.round(rep0)} → ${Math.round(rep1)}</b> ${repD >= 0 ? '▲' : '▼'}${Math.abs(repD)}</span>${(t.closed?.discarded || sum.spoiled) ? `<span class="cr-chip warn">${L('버린 재료', 'Tossed')} <b>${(t.closed?.discarded || 0) + (sum.spoiled || 0)}</b></span>` : ''}</div>
 ${picks.length ? picks.map(n => `<div class="cr-nrow"><time>${esc(n.t)}</time><span class="cr-nd ${n.k}"></span><span class="cr-nt">${esc(n.text)}</span>${n.chip ? `<span class="cr-chip ${n.good ? 'up' : 'dn'}">${esc(n.chip)}</span>` : ''}</div>`).join('') : `<p class="cr-muted">${L('별일 없이 조용한 하루였어요.', 'A quiet day with nothing much going on.')}</p>`}

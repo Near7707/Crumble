@@ -603,6 +603,20 @@ export function sellOne(g, biz) {
     return m;
 }
 
+// 0.3.6 사장님이 오래 자리를 비우면 직원들이 남은 영업을 마저 함 (frac = 남은 영업 비율). 산 재료 안에서, 값은 조금 덜 받고 평판은 안 오름
+export function staffRest(g, biz, frac) {
+    if (frac <= 0 || !workingStaff(g).length || !g.menu?.length) return { n: 0, sales: 0 };
+    const n = Math.max(0, Math.min(Math.round(expectedGuests(g) * frac * .7), Math.floor(g.ing)));
+    let sales = 0;
+    for (let i = 0; i < n; i++) {
+        const m = pick(g.menu), p = Math.round(m.p * .8);
+        biz.served++; biz.revenue += p; g.money += p; sales += p;
+        biz.sold[m.id] = (biz.sold[m.id] || 0) + 1;
+    }
+    g.ing -= n;
+    return { n, sales };
+}
+
 // ---------- 마감 ----------
 export function closeDay(g, biz) {
     const w = workingStaff(g);
