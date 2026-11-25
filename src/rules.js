@@ -61,18 +61,51 @@ export function logNews(news) {
     }
     return out;
 }
+/** 능력으로 정하는 담당 (예전 방식 그대로) → { id: role } */
+export function autoRoleMap(list) {
+    const m = {};
+    list.forEach(s => (m[s.id] = 'floor'));
+    if (!list.length) return m;
+    if (list.length === 1) { m[list[0].id] = 'all'; return m; }
+    const baker = [...list].sort((a, b) => b.bake - a.bake || a.serve - b.serve)[0];
+    m[baker.id] = 'bake';
+    const server = list.filter(s => s !== baker).sort((a, b) => b.serve - a.serve)[0];
+    m[server.id] = 'serve';
+    return m;
+}
+/**
+ * 0.3.9 사장님이 고른 담당(g.rolePick)을 바로잡기: '전부'는 한 명, 오븐·계산대는 한 명씩,
+ * 오븐·계산대가 비면(결근 등) 남은 사람 중 능력 순으로 채움. first = 먼저 채울 때 피할 사람.
+ */
+export function fixRoles(list, want, avoid = null) {
+    const m = {};
+    list.forEach(s => (m[s.id] = want[s.id] || 'floor'));
+    if (list.length < 2) { list.forEach(s => (m[s.id] = 'all')); return m; }
+    const alls = list.filter(s => m[s.id] === 'all');
+    alls.slice(1).forEach(s => (m[s.id] = 'floor'));
+    if (alls.length) {
+        list.forEach(s => { if (s !== alls[0] && m[s.id] !== 'floor') m[s.id] = 'floor'; });
+        return m;
+    }
+    for (const r of ['bake', 'serve']) {
+        const has = list.filter(s => m[s.id] === r);
+        has.slice(1).forEach(s => (m[s.id] = 'floor'));
+        if (has.length) continue;
+        const free = list.filter(s => m[s.id] === 'floor').sort((a, b) => (a.id === avoid) - (b.id === avoid) || (r === 'bake' ? b.bake - a.bake : b.serve - a.serve));
+        const other = list.find(s => m[s.id] === (r === 'bake' ? 'serve' : 'bake'));
+        // 방금 홀로 보낸 사람밖에 없으면, 남은 자리 사람이 전부를 맡음 (직원 2명일 때)
+        if ((!free[0] || free[0].id === avoid) && other) { list.forEach(s => (m[s.id] = s === other ? 'all' : 'floor')); return m; }
+        if (free[0]) m[free[0].id] = r;
+    }
+    return m;
+}
 export function assignRoles(g) {
     const list = workingStaff(g);
-    list.forEach(s => (s.role = 'floor'));
-    if (!list.length) return;
-    if (list.length === 1) { list[0].role = 'all'; return; }
-    const baker = [...list].sort((a, b) => b.bake - a.bake || a.serve - b.serve)[0];
-    baker.role = 'bake';
-    const rest = list.filter(s => s !== baker);
-    const server = [...rest].sort((a, b) => b.serve - a.serve)[0];
-    server.role = 'serve';
+    g.staff.forEach(s => (s.role = 'floor'));
+    const m = g.rolePick && list.length >= 2 ? fixRoles(list, g.rolePick) : autoRoleMap(list);
+    list.forEach(s => (s.role = m[s.id]));
 }
-export const roleLabel = r => L(...({ bake: ['제빵', 'Baking'], serve: ['계산대', 'Counter'], floor: ['홀·청소', 'Floor'], all: ['혼자 다', 'Everything'] }[r] || ['', '']));
+export const roleLabel = r => L(...({ bake: ['제빵', 'Baking'], serve: ['계산대', 'Counter'], floor: ['홀·청소', 'Floor'], all: ['전부', 'All'] }[r] || ['', '']));
 
 // ---------- 하루 시작 ----------
 /** 다시 켰을 때: 지난 날들을 자동 운영으로 계산할 목록을 만든다 (최대 3일) */
@@ -782,6 +815,7 @@ export function fireStaff(id, quit = false) {
     (g.leftStaff ??= []).push({ id, day: g.day, quit });
     const nm = book(id)?.name || '';
     logBoss(g, quit ? L(`${nm} 님이 가게를 그만뒀어요`, `${nm} quit the shop`) : L(`사장님이 ${nm} 님을 내보냈어요`, `You let ${nm} go`));
+    g.rolePick = null; // 0.3.9 사람이 바뀌면 담당은 다시 자동으로
     assignRoles(g);
     save();
 }

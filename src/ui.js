@@ -783,6 +783,7 @@ function doHire(avatar, made) {
     s.staffBook[avatar] = { ...bk, avatar, baseBake: b0, baseServe: s0 };
     g.staff.push({ id: avatar, avatar, color: nextColor(), bake: b0, serve: s0, exp: { bake: 0, serve: 0 }, mood: 65, fatigue: 20, hiredDay: g.day, role: 'floor', absent: false });
     rel('boss', avatar);
+    g.rolePick = null; // 0.3.9 사람이 바뀌면 담당은 다시 자동으로
     assignRoles(g);
     logBoss(g, F(L('사장님이 {n} 님을 고용했어요', 'You hired {n}'), { n: made.name }));
     save();

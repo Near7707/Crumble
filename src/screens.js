@@ -6,7 +6,7 @@ import {
     prepToday, expectedGuests, ingCost, pickEvents, fallbackEventText, resolveEvent, deltaText, newBiz, sellOne,
     closeDay, worries, finishClose, applyNotices, workingStaff, hasTag, friendSaves, EVENT_KINDS, guestMult,
     roleLabel, weatherLabel, staffPick, delegateIndex, canDelegate, pickReason, deltaChips, tagLabel,
-    applyEff, avgPrice, staffRest,
+    applyEff, avgPrice, staffRest, assignRoles, autoRoleMap, fixRoles,
 } from './rules.js';
 import { ACC, REACT, FOLLOW, FOLLOW_OF, pickReaction, followChance, MAX_ACC_PER_DAY, MAX_FOLLOW_PER_DAY, accText, moodLabel } from './orders.js';
 import { createScene } from './scene.js';
@@ -66,6 +66,7 @@ function morningScreen(box) {
 ${(t.notices || []).map(n => `<div class="cr-alertCard">🌙 ${esc(n.text)}</div>`).join('')}
 <div class="cr-sceneHost" id="cr-mScene"></div>
 <section class="cr-card"><div class="cr-talk" id="cr-mTalk"></div></section>
+${workingStaff(g).length >= 2 ? '<section class="cr-card" id="cr-roles"></section>' : ''}
 <section class="cr-card"><div class="cr-ttl">🍰 ${L('재료 사기', 'Buy stock')}<small>${F(L('지금 재고 {a} · 개당 {p}', 'In stock {a} · {p} each'), { a: g.ing, p: money(ING_PRICE) })}</small></div>
 <div class="cr-row"><span class="cr-stp"><button type="button" data-m="buy" data-d="-5" aria-label="${L('재료 덜 사기', 'Buy less')}">−</button><b id="cr-buyN"></b><button type="button" data-m="buy" data-d="5" aria-label="${L('재료 더 사기', 'Buy more')}">+</button></span>
 <span class="cr-muted cr-right">${L('총', 'Total')} <b id="cr-buyCost"></b><br>${L('디저트는 남으면 버려요', 'Leftover desserts get tossed')}</span></div></section>
@@ -108,8 +109,40 @@ ${(t.notices || []).map(n => `<div class="cr-alertCard">🌙 ${esc(n.text)}</div
         const ai = box.querySelector('#cr-aiState');
         ai.innerHTML = t.aiDone ? '' : t.aiError ? `<span class="cr-chip warn">${L('대사를 못 받아서 기본 대사로 진행해요', 'Using default lines (AI unavailable)')}</span>` : `<span class="cr-chip cr-loading">${L('직원들이 오늘 할 말을 고르는 중…', 'Staff are getting ready…')}</span>`;
     };
+    // ---------- 0.3.9 오늘 담당 ----------
+    const ROLES = [['bake', L('🔥 오븐', '🔥 Oven')], ['serve', L('🧾 계산대', '🧾 Counter')], ['floor', L('🧹 홀', '🧹 Floor')], ['all', L('🙌 전부', '🙌 All')]];
+    const roleWord = r => (ROLES.find(x => x[0] === r)?.[1] || '').replace(/^\S+\s/, '');
+    const drawRoles = () => {
+        const el = box.querySelector('#cr-roles'); if (!el) return;
+        const rec = autoRoleMap(w);
+        el.innerHTML = `<div class="cr-ttl">👩‍🍳 ${L('오늘 담당', 'Today\'s posts')}${g.rolePick ? `<button type="button" class="cr-btn sm cr-roleAuto" data-m="roleAuto">${L('자동으로', 'Auto')}</button>` : `<small>${L('능력으로 정했어요', 'Set by skill')}</small>`}</div>` +
+            w.map(s => `<div class="cr-roleRow"><div class="cr-roleWho">${faceChip(s.id, 30)}<b>${esc(book(s.id)?.name || '')}</b>${(book(s.id)?.tags || []).slice(0, 2).map(t => `<span class="cr-tag">${esc(tagLabel(t))}</span>`).join('')}${s.role !== rec[s.id] ? `<small class="cr-muted cr-roleRec">${L('추천', 'Suggested')}: ${roleWord(rec[s.id])}</small>` : ''}</div>` +
+                `<div class="cr-seg cr-roleSeg">${ROLES.map(([r, lb]) => `<button type="button" data-m="role" data-id="${esc(s.id)}" data-r="${r}" class="${s.role === r ? 'on' : ''}" aria-pressed="${s.role === r}">${lb}</button>`).join('')}</div></div>`).join('') +
+            `<div class="cr-muted cr-roleNote">🔥 ${L('오븐 — 재료가 떨어지면 청소·계산을 거들어요', 'Oven — helps clean and serve when stock runs out')}<br>🙌 ${L('전부 — 오븐·계산대 둘 다, 줄이 있으면 굽기를 미뤄요', 'All — oven and counter both; puts baking off while guests wait')}<br>${L('바꿀 때까지 내일도 이대로예요', 'Stays this way until you change it')}</div>`;
+    };
+    const spotOf = r => (r === 'bake' || r === 'all' ? sc.lay.spots.oven : r === 'serve' ? sc.lay.spots.counter : sc.lay.idle[0]);
+    const setRole = (id, r) => {
+        const cur = Object.fromEntries(w.map(s => [s.id, s.role]));
+        if (cur[id] === r) return;
+        const want = { ...cur };
+        if (r === 'all') w.forEach(s => (want[s.id] = 'floor'));
+        else if (r === 'bake' || r === 'serve') {
+            const holder = w.find(s => s.id !== id && (cur[s.id] === r || cur[s.id] === 'all'));
+            if (holder) want[holder.id] = cur[holder.id] === 'all' ? (r === 'bake' ? 'serve' : 'bake') : cur[id] === 'all' ? 'floor' : cur[id];
+        }
+        want[id] = r;
+        g.rolePick = fixRoles(w, want, id);
+        assignRoles(g);
+        for (const s of w) if (s.role !== cur[s.id] && ents[s.id]?.el.isConnected) sc.go(ents[s.id], spotOf(s.role)).catch(() => { });
+        react(id, 'rObey');
+    };
     box.querySelector('main').addEventListener('click', e => {
         const b = e.target.closest('[data-m]'); if (!b) return;
+        if (b.dataset.m === 'role' || b.dataset.m === 'roleAuto') {
+            if (b.dataset.m === 'roleAuto') { g.rolePick = null; assignRoles(g); }
+            else setRole(b.dataset.id, b.dataset.r);
+            drawRoles(); save(); return;
+        }
         if (b.dataset.m === 'buy') {
             t.buy = clamp(t.buy + +b.dataset.d, 0, 60);
             if (+b.dataset.d > 0) react(t.buy >= 25 ? (w.find(s => hasTag(s.id, 'quiet', 'prickly', 'neat'))?.id || byRole('floor')) : byRole('bake'), t.buy >= 25 ? 'buyMore' : 'greet');
@@ -132,7 +165,7 @@ ${(t.notices || []).map(n => `<div class="cr-alertCard">🌙 ${esc(n.text)}</div
         save(); render();
     };
     t.onAi = () => { if (box.isConnected) update(); };
-    update();
+    update(); drawRoles();
     // 장면: 어두운 가게 → 불 켜짐 → 직원 출근
     sc.setEnv({ tod: 'dawn', weather: g.weather }); sc.sign('CLOSED'); sc.display(0);
     const st = []; for (let i = 0; i < Math.round((100 - g.clean) / 18); i++) { const [c, r] = sc.randomFree(); st.push({ c, r }); }
