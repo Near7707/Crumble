@@ -116,7 +116,7 @@ function bossPhotoInner(game) {
 <div class="cr-facePrev"><div class="cr-faceBig cr-bpBig"></div><div class="cr-faceSmall cr-bpSmall"></div></div>
 <p class="cr-bpHint">${L('동그라미 안을 끌어서 옮겨요 · 두 손가락이나 휠로 확대', 'Drag inside the circle · pinch or scroll to zoom')}</p>
 <label>${L('확대', 'Zoom')}<input type="range" min="100" max="400" step="5" data-bpk="z"></label>
-<div class="cr-bpDone"><button type="button" class="cr-bp${game ? '' : ' menu_button'}" data-bp="reset">${L('처음대로', 'Reset')}</button><button type="button" class="cr-bp on${game ? '' : ' menu_button'}" data-bp="adjust">${L('다 맞췄어요', 'Done')}</button></div></div>` : '';
+<div class="cr-bpDone"><button type="button" class="cr-bp${game ? '' : ' menu_button'}" data-bp="reset">${L('원래대로', 'Reset')}</button><button type="button" class="cr-bp on${game ? '' : ' menu_button'}" data-bp="adjust">${L('다 맞췄어요', 'Done')}</button></div></div>` : '';
     return `${bossFace(54)}<div style="flex:1;min-width:0"><div class="cr-bpBtns">${btn('persona', L('페르소나 사진', 'Persona avatar'), src === 'persona')}${btn('upload', L('사진 올리기', 'Upload photo'), src === 'upload' && !!s.bossImg)}${btn('adjust', L('위치 맞추기', 'Adjust'), bpEditOpen && has, !has)}${btn('none', L('지우기', 'Remove'), src === 'none')}</div>
 <small class="cr-bpNote">${note}</small>${edit}</div><input type="file" accept="image/*" data-bpfile hidden>`;
 }
