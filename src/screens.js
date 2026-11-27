@@ -6,7 +6,7 @@ import {
     prepToday, expectedGuests, ingCost, pickEvents, fallbackEventText, resolveEvent, deltaText, newBiz, sellOne,
     closeDay, worries, finishClose, applyNotices, workingStaff, hasTag, friendSaves, EVENT_KINDS, guestMult,
     roleLabel, weatherLabel, staffPick, delegateIndex, canDelegate, pickReason, deltaChips, tagLabel,
-    applyEff, avgPrice, staffRest, assignRoles, autoRoleMap, fixRoles,
+    applyEff, avgPrice, flowRep, staffRest, assignRoles, autoRoleMap, fixRoles,
 } from './rules.js';
 import { ACC, REACT, FOLLOW, FOLLOW_OF, pickReaction, followChance, MAX_ACC_PER_DAY, MAX_FOLLOW_PER_DAY, accText, moodLabel } from './orders.js';
 import { createScene } from './scene.js';
@@ -65,7 +65,7 @@ function morningScreen(box) {
 <main class="cr-main" data-biz>
 ${(t.notices || []).map(n => `<div class="cr-alertCard">🌙 ${esc(n.text)}</div>`).join('')}
 <div class="cr-sceneHost" id="cr-mScene"></div>
-<section class="cr-card"><div class="cr-talk" id="cr-mTalk"></div></section>
+<section class="cr-card"><div class="cr-talkList" id="cr-mTalk"></div></section>
 ${workingStaff(g).length >= 2 ? '<section class="cr-card" id="cr-roles"></section>' : ''}
 <section class="cr-card"><div class="cr-ttl">🍰 ${L('재료 사기', 'Buy stock')}<small>${F(L('지금 재고 {a} · 개당 {p}', 'In stock {a} · {p} each'), { a: g.ing, p: money(ING_PRICE) })}</small></div>
 <div class="cr-row"><span class="cr-stp"><button type="button" data-m="buy" data-d="-5" aria-label="${L('재료 덜 사기', 'Buy less')}">−</button><b id="cr-buyN"></b><button type="button" data-m="buy" data-d="5" aria-label="${L('재료 더 사기', 'Buy more')}">+</button></span>
@@ -78,14 +78,20 @@ ${workingStaff(g).length >= 2 ? '<section class="cr-card" id="cr-roles"></sectio
     const host = box.querySelector('#cr-mScene');
     const sc = addScene(createScene(host, { size: g.size, height: 230, zoom: .78, focus: [5, 3], zoomKey: 'morning' }));
     const ents = {};
+    const w = workingStaff(g);
+    // 0.3.12 직원 한마디: 직원마다 한 줄씩 (출근 인사로 채우고, 반응한 직원 줄만 바뀌며 잠깐 강조)
+    const said = Object.fromEntries(w.map(s => [s.id, line(s.id, 'greet')]));
+    const drawTalk = fresh => {
+        const talk = box.querySelector('#cr-mTalk'); if (!talk) return;
+        talk.innerHTML = w.map(s => `<div class="cr-talk${s.id === fresh ? ' fresh' : ''}">${faceChip(s.id, 30)}<p><b>${esc(book(s.id)?.name)}</b> · ${esc(said[s.id] || '…')}</p></div>`).join('');
+        if (fresh) setTimeout(() => talk.querySelector('.cr-talk.fresh')?.classList.remove('fresh'), 1600);
+    };
     const react = (id, key) => {
         if (!id) return;
         const txt = line(id, key);
-        const talk = box.querySelector('#cr-mTalk');
-        talk.innerHTML = `${faceChip(id, 30)}<p><b>${esc(book(id)?.name)}</b> · ${esc(txt)}</p>`;
+        said[id] = txt; drawTalk(id);
         if (ents[id]?.el.isConnected) sc.say(ents[id], txt, 2800);
     };
-    const w = workingStaff(g);
     const byRole = r => (w.find(s => s.role === r) || w.find(s => s.role === 'all') || w[0])?.id;
     const update = () => {
         box.querySelector('#cr-buyN').textContent = t.buy;
@@ -118,7 +124,7 @@ ${workingStaff(g).length >= 2 ? '<section class="cr-card" id="cr-roles"></sectio
         el.innerHTML = `<div class="cr-ttl">👩‍🍳 ${L('오늘 담당', 'Today\'s posts')}${g.rolePick ? `<button type="button" class="cr-btn sm cr-roleAuto" data-m="roleAuto">${L('자동으로', 'Auto')}</button>` : `<small>${L('능력으로 정했어요', 'Set by skill')}</small>`}</div>` +
             w.map(s => `<div class="cr-roleRow"><div class="cr-roleWho">${faceChip(s.id, 30)}<b>${esc(book(s.id)?.name || '')}</b>${(book(s.id)?.tags || []).slice(0, 2).map(t => `<span class="cr-tag">${esc(tagLabel(t))}</span>`).join('')}${s.role !== rec[s.id] ? `<small class="cr-muted cr-roleRec">${L('추천', 'Suggested')}: ${roleWord(rec[s.id])}</small>` : ''}</div>` +
                 `<div class="cr-seg cr-roleSeg">${ROLES.map(([r, lb]) => `<button type="button" data-m="role" data-id="${esc(s.id)}" data-r="${r}" class="${s.role === r ? 'on' : ''}" aria-pressed="${s.role === r}">${lb}</button>`).join('')}</div></div>`).join('') +
-            `<div class="cr-muted cr-roleNote">🔥 ${L('오븐 — 재료가 떨어지면 청소·계산을 거들어요', 'Oven — helps clean and serve when stock runs out')}<br>🙌 ${L('전부 — 오븐·계산대·홀 다 해요 (여러 명 가능)', 'All — oven, counter, and floor (more than one is fine)')}<br>${L('바꿀 때까지 내일도 이대로예요', 'Stays this way until you change it')}</div>`;
+            `<div class="cr-muted cr-roleNote">🔥 ${L('오븐 — 재료가 떨어지면 청소·계산을 거들어요', 'Oven — helps clean and serve when stock runs out')}<br>🧾 ${L('계산대 — 진열대가 비면 굽기를 거들어요', 'Counter — helps bake when the display runs empty')}<br>🙌 ${L('전부 — 오븐·계산대·홀 다 해요 (여러 명 가능)', 'All — oven, counter, and floor (more than one is fine)')}<br>${L('바꿀 때까지 내일도 이대로예요', 'Stays this way until you change it')}</div>`;
     };
     const spotOf = r => (r === 'bake' || r === 'all' ? sc.lay.spots.oven : r === 'serve' ? sc.lay.spots.counter : sc.lay.idle[0]);
     const setRole = (id, r) => {
@@ -179,7 +185,7 @@ ${workingStaff(g).length >= 2 ? '<section class="cr-card" id="cr-roles"></sectio
                 await sc.wait(900);
                 const e = sc.ent({ staffId: s.id, label: book(s.id)?.name, c: door[0], r: door[1], onTap: e => { sc.jump(e); react(s.id, 'tap' + (1 + Math.floor(Math.random() * 3))); } });
                 ents[s.id] = e; e.el.style.opacity = 0; await sc.wait(30); e.el.style.opacity = 1;
-                sc.say(e, line(s.id, 'greet'), 1800);
+                sc.say(e, said[s.id] || line(s.id, 'greet'), 1800);
                 jobs.push((async () => {
                     if (s.role === 'bake' || s.role === 'all') {
                         await sc.go(e, sc.lay.spots.oven); sc.emo(e, 'spark'); sc.work(e, true); sc.steam(true);
@@ -199,7 +205,7 @@ ${workingStaff(g).length >= 2 ? '<section class="cr-card" id="cr-roles"></sectio
             await Promise.all(jobs);
         } catch { /* 화면이 바뀜 */ }
     })();
-    if (w[0]) setTimeout(() => react(w[0].id, 'greet'), 300);
+    drawTalk(null);
 }
 
 async function startMorningAI(g) {
@@ -334,12 +340,22 @@ function openScreen(box) {
     const outOfStock = s => s.role === 'bake' && g.ing <= 0; // 0.3.8
     const fat = s => ((s.fatigue ?? 30) > 75 ? 1.3 : 1) * ruleSlow(g, s.id); // 0.3.0 대책 중엔 조금 느려질 수 있음
 
+    // 0.3.12 손님 일로 깎이는 평판 (하루 −4까지). 실제로 깎인 만큼 글로, 다 깎였으면 한 번만 알림
+    const repLoss = d => {
+        const got = flowRep(g, biz, d);
+        if (!got) {
+            if (!biz.repCapSaid) { biz.repCapSaid = true; news(L('오늘은 손님 일로 평판이 더 안 내려가요 (하루 −4까지)', 'Guests can\'t lower your rep any further today (−4 a day)'), 'move', '', false, 'repcap'); }
+            return '';
+        }
+        return Number.isInteger(got) ? `${L('평판', 'Rep')} −${-got}` : L('평판 ↓', 'Rep ↓');
+    };
     const tasks = {
         async bake(s) {
             if (g.ing <= 0 || B.shelf >= 6 || (B.ovenBy && B.ovenBy !== s.id)) return false;
             if (s.role === 'all' && B.queue.length && B.shelf > 0) return false;
             const e = E(s); B.ovenBy = s.id;
-            setDoing(s, L('오븐 앞 · 굽는 중', 'Oven · baking'), 'focus', L('굽는 중', 'Baking'));
+            if (s.role === 'serve') setDoing(s, L('오븐 앞 · 굽기 거드는 중', 'Oven · helping bake'), 'focus', L('굽기 거드는 중', 'Helping bake'));
+            else setDoing(s, L('오븐 앞 · 굽는 중', 'Oven · baking'), 'focus', L('굽는 중', 'Baking'));
             await walk(s, L0.spots.oven); sc.emo(e, 'spark'); sc.work(e, true); sc.steam(true);
             await sc.wait(Math.max(1800, 3800 - s.bake * 200) * fat(s)); // 0.3.5 능력 1: 3.6초 → 10: 1.8초
             sc.work(e, false); sc.steam(false);
@@ -396,12 +412,12 @@ function openScreen(box) {
                 }
                 else if (chance(.25)) sc.say(e, line(s.id, 'thanks'), 1200);
                 if (hasTag(s.id, 'prickly') && chance(.15)) {
-                    g.rep = clamp(g.rep - .5, 0, 100); sc.emo(q.e, 'sweat');
-                    sc.float(q.e, L('평판 ↓', 'Rep ↓'), 'bad', 18); news(F(L('{n} 손님에게 퉁명스럽게 굴었어요', '{n} was curt with a guest'), { n: nmGa(s.id) }), 'bad', L('평판 ↓', 'Rep ↓'), false, 'curt' + s.id, s.id);
+                    const rl = repLoss(-.5); sc.emo(q.e, 'sweat');
+                    if (rl) sc.float(q.e, rl, 'bad', 18); news(F(L('{n} 손님에게 퉁명스럽게 굴었어요', '{n} was curt with a guest'), { n: nmGa(s.id) }), 'bad', rl, false, 'curt' + s.id, s.id);
                 }
             } else {
-                q.done = 'soldout'; biz.soldout++; g.rep = clamp(g.rep - 1, 0, 100); sc.say(q.e, L('다 팔렸네…', 'All sold out…'), 1800); sc.emo(q.e, 'sweat');
-                sc.waitBar(q.e, null); sc.float(q.e, L('평판 −1', 'Rep −1'), 'bad'); news(L('다 팔려서 손님이 빈손으로 갔어요', 'Sold out — a guest left empty-handed'), 'bad', L('평판 −1', 'Rep −1'), false, 'soldout');
+                q.done = 'soldout'; biz.soldout++; const rl = repLoss(-1); sc.say(q.e, L('다 팔렸네…', 'All sold out…'), 1800); sc.emo(q.e, 'sweat');
+                sc.waitBar(q.e, null); if (rl) sc.float(q.e, rl, 'bad'); news(L('다 팔려서 손님이 빈손으로 갔어요', 'Sold out — a guest left empty-handed'), 'bad', rl, false, 'soldout');
                 sc.say(e, line(s.id, 'soldout'), 1800);
             }
             B.queue.shift(); shiftQueue(); B.counterBy = null; chips();
@@ -476,9 +492,15 @@ function openScreen(box) {
             return true;
         },
     };
+    // 0.3.12 계산대 담당: 진열대가 텅 비었거나, 한가한데 거의 비었으면 오븐을 거듦 (오븐이 비어 있을 때만)
+    tasks.assist = async s => {
+        if (B.shelf > 1 || g.ing <= 0 || B.ovenBy) return false;
+        if (B.shelf > 0 && B.queue.some(q => !q.done)) return false; // 팔 게 있으면 계산이 먼저, 텅 비면 줄이 있어도 거듦
+        return tasks.bake(s);
+    };
     const PLAN = {
         bake: ['bake', 'help', 'idle'],
-        serve: ['serve', 'chat', 'doze', 'clean', 'idle'],
+        serve: ['serve', 'assist', 'chat', 'doze', 'clean', 'idle'],
         floor: ['clean', 'help', 'doze', 'chat', 'idle'],
         all: ['serve', 'bake', 'clean', 'idle'],
     };
@@ -517,9 +539,9 @@ function openScreen(box) {
                 if (waited > patience && !q.done) {
                     if (B.counterBy && B.queue[0] === q) continue; // 지금 주문 받는 중
                     sc.say(e, L('너무 오래 걸리네…', 'This is taking forever…'), 1800);
-                    g.rep = clamp(g.rep - 2, 0, 100); biz.left++; q.done = 'left';
-                    sc.waitBar(e, null); sc.float(e, '!', 'leave'); sc.float(e, L('평판 −2', 'Rep −2'), 'bad', 22);
-                    news(L('기다리다 지친 손님이 그냥 나갔어요', 'A guest got tired of waiting and left'), 'bad', L('평판 −2', 'Rep −2'), false, 'left');
+                    const rl = repLoss(-2); biz.left++; q.done = 'left';
+                    sc.waitBar(e, null); sc.float(e, '!', 'leave'); if (rl) sc.float(e, rl, 'bad', 22);
+                    news(L('기다리다 지친 손님이 그냥 나갔어요', 'A guest got tired of waiting and left'), 'bad', rl, false, 'left');
                     B.queue = B.queue.filter(x => x !== q); shiftQueue(); chips();
                 }
             }

@@ -198,6 +198,9 @@ details.cr-card summary { cursor: pointer; font-weight: 700; font-size: 13px; }
 .cr-time .cr-bar.time i { background: var(--cr-butter); border-right: 2px solid #E9CC72; transition: width .3s linear; }
 .cr-talk { display: flex; gap: 8px; align-items: center; min-height: 36px; }
 .cr-talk p { margin: 0; flex: 1; background: #FFF4E6; border-radius: 12px; padding: 7px 10px; font-size: 13px; }
+/* 0.3.12 아침 직원 한마디: 직원마다 한 줄 */
+.cr-talkList { display: flex; flex-direction: column; gap: 6px; }
+.cr-talk.fresh p { background: #FDE3D8; box-shadow: 0 0 0 1.5px #F2B8A0 inset; transition: background .3s; }
 .cr-whoRow { display: flex; align-items: center; gap: 8px; padding: 5px 0; border-top: 1px dashed var(--cr-line); font-size: 12.5px; }
 .cr-whoRow:first-of-type { border-top: none; }
 .cr-whoRow .cr-muted { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

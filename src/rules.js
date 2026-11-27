@@ -642,12 +642,24 @@ export function newBiz(g) {
         sold: {},
     };
 }
+// 0.3.12 손님 흐름(판매·다 팔림·나감·퉁명)으로 바뀌는 평판은 하루 ±4까지. 사건·지시 결과는 따로 (그대로)
+export const REP_FLOW_CAP = 4;
+export function flowRep(g, biz, d) {
+    if (!biz) { const b = g.rep; g.rep = clamp(g.rep + d, 0, 100); return g.rep - b; }
+    const f = biz.repFlow || 0;
+    const want = clamp(f + d, -REP_FLOW_CAP, REP_FLOW_CAP) - f;
+    const before = g.rep;
+    g.rep = clamp(g.rep + want, 0, 100);
+    const got = g.rep - before;
+    biz.repFlow = f + got;
+    return got;
+}
 export function sellOne(g, biz) {
     const m = pick(g.menu);
     biz.served++; biz.revenue += m.p; g.money += m.p;
     biz.sold[m.id] = (biz.sold[m.id] || 0) + 1;
     const pf = menuInfo(m.id).base / m.p;
-    g.rep = clamp(g.rep + (pf >= .95 ? .35 : .15), 0, 100);
+    flowRep(g, biz, pf >= .95 ? .35 : .15);
     return m;
 }
 
