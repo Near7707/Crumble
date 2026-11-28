@@ -72,7 +72,7 @@ https://github.com/Near7707/Crumble
 
 ## 라이선스
 
-AGPL-3.0. 로고 글자는 Fira Sans Black(SIL OFL) 글자 모양을 바탕으로 다듬어 그림으로 만들었어요.
+MIT. 로고 글자는 Fira Sans Black(SIL OFL) 글자 모양을 바탕으로 다듬어 그림으로 만들었어요.
 
 ---
 
@@ -146,4 +146,4 @@ By default it uses whatever API you're currently connected to. Pick a separate c
 
 ## License
 
-AGPL-3.0. The logo lettering is based on Fira Sans Black (SIL OFL) letterforms, reshaped and baked into an image.
+MIT. The logo lettering is based on Fira Sans Black (SIL OFL) letterforms, reshaped and baked into an image.
